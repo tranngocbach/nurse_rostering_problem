@@ -51,7 +51,12 @@ def load_data(scenario_file, history_file, weekday_file):
     nurse_name_to_index = {nurse['id']: n for n,
                            nurse in enumerate(scenario['nurses'])}
 
-    return scenario, history, weekday, N, D, S, SK, W, nurse_skills, forbidden_shifts, shift_off_requests, nurse_name_to_index
+    # Map nurses to their contracts
+    nurse_contracts = {n: nurse['contract']
+                       for n, nurse in enumerate(scenario['nurses'])}
+    contracts = {contract['id']: contract for contract in scenario['contracts']}
+
+    return scenario, history, weekday, N, D, S, SK, W, nurse_skills, forbidden_shifts, shift_off_requests, nurse_name_to_index, nurse_contracts, contracts
 # Hàm lấy giá trị Cmin từ dữ liệu weekday
 
 
@@ -233,6 +238,50 @@ def constraint_S4_SOR(N, D, S, SK, nurse_skills, shift_off_requests, nurse_name_
                 soft_clauses.append((penalty_weight, f"-{var} 0"))
 
     return soft_clauses
+
+# S5: Complete Weekend
+
+
+def constraint_S5(N, D, S, nurse_skills, nurse_contracts, contracts, penalty_weight=10):
+    soft_clauses = []
+    weekends = [(5, 6)]  # Saturday (5) and Sunday (6)
+
+    for n in range(N):
+        contract_id = nurse_contracts[n]
+        contract = contracts[contract_id]
+
+        if contract.get('completeWeekends', 0) == 1:
+            for d1, d2 in weekends:
+                # p_{n, d} = 1 if the nurse works on any shift during the day
+                p_d1_vars = [get_variable(f"x_{n}_{d1}_{s}_{sk}")
+                             for s in S for sk in nurse_skills.get(n, [])]
+                p_d2_vars = [get_variable(f"x_{n}_{d2}_{s}_{sk}")
+                             for s in S for sk in nurse_skills.get(n, [])]
+
+                # Add clauses to ensure the nurse works both days or none
+                for p_d1 in p_d1_vars:
+                    for p_d2 in p_d2_vars:
+                        # If the nurse must work both days or none
+                        # If the nurse works on Saturday, they must work on Sunday and vice versa
+                        soft_clauses.append(
+                            (penalty_weight, f"-{p_d1} {p_d2} 0"))
+                        soft_clauses.append(
+                            (penalty_weight, f"{p_d1} -{p_d2} 0"))
+
+    return soft_clauses
+
+
+# Hàm giải bài toán bằng SAT Solver (Glucose)
+# def solve_sat(clauses):
+    solver = Glucose3()
+    for clause in clauses:
+        solver.add_clause(
+            list(map(int, clause.strip().split()[:-1])))  # Bỏ ký tự '0'
+
+    if solver.solve():
+        model = solver.get_model()
+        return [reverse_variable_dict[abs(var)] for var in model if var > 0]
+
 # Hàm giải bài toán bằng MaxSAT Solver (RC2)
 
 
@@ -282,7 +331,7 @@ def export_cnf(filename="output.cnf", clauses=[]):
 
 
 if __name__ == "__main__":
-    scenario, history, weekday, N, D, S, SK, W, nurse_skills, forbidden_shifts, shift_off_requests, nurse_name_to_index = load_data(
+    scenario, history, weekday, N, D, S, SK, W, nurse_skills, forbidden_shifts, shift_off_requests, nurse_name_to_index, nurse_contracts, contracts = load_data(
         "Sc-n005w4.json", "H0-n005w4-0.json", "WD-n005w4-5.json")
     # all_clauses = constraint_H1(
     #     N, D, S, SK, nurse_skills) + constraint_H3(N, D, S, SK, nurse_skills, forbidden_shifts)
@@ -297,7 +346,8 @@ if __name__ == "__main__":
     #         print(assign)
     # else:
     #     print("Không tìm thấy lời giải khả thi.")
-    print(nurse_skills)
+    print(constraint_H1(
+        N, D, S, SK, nurse_skills) + constraint_H3(N, D, S, SK, nurse_skills, forbidden_shifts))
 
     # print(get_Cmin(weekday, 6, 'Early'))
 
