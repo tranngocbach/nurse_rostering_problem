@@ -1,7 +1,9 @@
 # nurse_rostering_sat.py
 
+import os
 import json
 import argparse
+import random
 from itertools import combinations
 from pypblib import pblib
 from pypblib.pblib import PBConfig, Pb2cnf
@@ -14,6 +16,7 @@ from pysat.examples.rc2 import RC2
 variable_dict = {}
 reverse_variable_dict = {}
 counter = 1
+max_var_cmin = 0
 
 # Tạo biến chỉ khi cần
 
@@ -51,12 +54,18 @@ def load_data(scenario_file, history_file, weekday_file):
     nurse_name_to_index = {nurse['id']: n for n,
                            nurse in enumerate(scenario['nurses'])}
 
-    # Map nurses to their contracts
+    # Map nurses index to their contracts
     nurse_contracts = {n: nurse['contract']
                        for n, nurse in enumerate(scenario['nurses'])}
-    contracts = {contract['id']: contract for contract in scenario['contracts']}
+    # list of contracts
+    contracts = {contract['id']: contract
+                 for contract in scenario['contracts']}
 
-    return scenario, history, weekday, N, D, S, SK, W, nurse_skills, forbidden_shifts, shift_off_requests, nurse_name_to_index, nurse_contracts, contracts
+    # Load history data
+    nurse_history = {nurse['nurse']
+        : nurse for nurse in history['nurseHistory']}
+
+    return scenario, history, weekday, N, D, S, SK, W, nurse_skills, forbidden_shifts, shift_off_requests, nurse_name_to_index, nurse_contracts, contracts, nurse_history
 # Hàm lấy giá trị Cmin từ dữ liệu weekday
 
 
@@ -149,10 +158,10 @@ def constraint_H3(N, D, S, SK, nurse_skills, forbidden_shifts):
                         clauses.append(f"-{var} 0")
     return clause
 
-# H2 $ S1: Minimum & Optimum
+# H2 & S1: Minimum & Optimum
 
 
-def combined_constraints_H2_S1(N, D, S, SK, weekday, nurse_skills, penalty_weight=30):
+def constraint_H2(N, D, S, SK, weekday, nurse_skills, penalty_weight=30):
     hard_clauses = []
     soft_clauses = []
     config = PBConfig()
@@ -163,28 +172,29 @@ def combined_constraints_H2_S1(N, D, S, SK, weekday, nurse_skills, penalty_weigh
         for s in S:
             for sk in SK:
                 Cmin = get_Cmin(weekday, d, s, sk)
-                Copt = get_Copt(weekday, d, s, sk)
+                # Copt = get_Copt(weekday, d, s, sk)
                 nurses = [get_variable(f"x_{n}_{d}_{s}_{sk}") for n in range(
                     N) if sk in nurse_skills.get(n, [])]
 
                 # Ensure at least Cmin nurses are assigned (hard constraint)
                 if Cmin > 0 and len(nurses) >= Cmin:
                     formula = []
+                    global max_var_cmin
                     max_var_cmin = pb2.encode_at_least_k(
                         nurses, Cmin, formula, len(variable_dict))
                     for clause in formula:
                         hard_clauses.append(" ".join(map(str, clause)) + " 0")
 
                 # Penalize each missing nurse below Copt (soft constraint)
-                if Copt > 0:
-                    formula = []
-                    max_var_copt = pb2.encode_at_least_k(
-                        nurses, Copt, formula, max_var_cmin)
-                    for clause in formula:
-                        soft_clauses.append(
-                            (penalty_weight, " ".join(map(str, clause)) + " 0"))
+                # if Copt > 0:
+                #     formula = []
+                #     max_var_copt = pb2.encode_at_least_k(
+                #         nurses, Copt, formula, max_var_cmin)
+                #     for clause in formula:
+                #         soft_clauses.append(
+                #             (penalty_weight, " ".join(map(str, clause)) + " 0"))
 
-    return hard_clauses, soft_clauses
+    return hard_clauses
 
 # Hàm giải bài toán bằng SAT Solver (Glucose)
 
@@ -201,6 +211,32 @@ def combined_constraints_H2_S1(N, D, S, SK, weekday, nurse_skills, penalty_weigh
     else:
         return None
 
+
+# S1.
+def constraint_S1(N, D, S, SK, weekday, nurse_skills, penalty_weight=30):
+    soft_clauses = []
+    config = PBConfig()
+    config.set_PB_Encoder(pblib.PB_BDD)
+    pb2 = Pb2cnf(config)
+
+    for d in range(D):
+        for s in S:
+            for sk in SK:
+                Copt = get_Copt(weekday, d, s, sk)
+                nurses = [get_variable(f"x_{n}_{d}_{s}_{sk}") for n in range(
+                    N) if sk in nurse_skills.get(n, [])]
+
+                # Penalize each missing nurse below Copt (soft constraint)
+                if Copt > 0:
+                    formula = []
+                    print(max_var_cmin)
+                    max_var_copt = pb2.encode_at_least_k(
+                        nurses, Copt, formula, max_var_cmin)
+                    for clause in formula:
+                        soft_clauses.append(
+                            (penalty_weight, " ".join(map(str, clause)) + " 0"))
+
+    return soft_clauses
 
 # S4. Preferences(10)
 
@@ -272,7 +308,7 @@ def constraint_S5(N, D, S, nurse_skills, nurse_contracts, contracts, penalty_wei
 
 
 # Hàm giải bài toán bằng SAT Solver (Glucose)
-# def solve_sat(clauses):
+def solve_sat(clauses):
     solver = Glucose3()
     for clause in clauses:
         solver.add_clause(
@@ -281,20 +317,20 @@ def constraint_S5(N, D, S, nurse_skills, nurse_contracts, contracts, penalty_wei
     if solver.solve():
         model = solver.get_model()
         return [reverse_variable_dict[abs(var)] for var in model if var > 0]
-
 # Hàm giải bài toán bằng MaxSAT Solver (RC2)
 
 
 def solve_maxsat(hard_clauses, soft_clauses):
     wcnf = WCNF()
 
-    # Thêm hard constraints
+    # Add hard constraints
     for clause in hard_clauses:
-        wcnf.append(clause)
+        wcnf.append([int(lit) for lit in clause.split() if lit != '0'])
 
-    # Thêm soft constraints với penalty
+    # Add soft constraints with penalty
     for weight, clause in soft_clauses:
-        wcnf.append(clause, weight=weight)
+        wcnf.append([int(lit)
+                    for lit in clause.split() if lit != '0'], weight=weight)
 
     solver = RC2(wcnf)
     solution = solver.compute()
@@ -303,18 +339,24 @@ def solve_maxsat(hard_clauses, soft_clauses):
         return [reverse_variable_dict[abs(var)] for var in solution if var > 0]
     else:
         return None
+
 # Hàm chuyển từ index về tên biến ban đầu
 
 
-def decode_solution(solution_vars):
+def decode_solution(solution, nurse_name_to_index):
     assignments = []
-    for var in solution_vars:
+    index_to_nurse_name = {v: k for k, v in nurse_name_to_index.items()}
+    day_mapping = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+
+    for var in solution:
         parts = var.split("_")
         if parts[0] == 'x':
             nurse_id, day, shift, skill = parts[1], parts[2], parts[3], parts[4]
+            nurse_name = index_to_nurse_name[int(nurse_id)]
+            day_name = day_mapping[int(day)]
             assignments.append({
-                "nurse_id": nurse_id,
-                "day": day,
+                "nurse": nurse_name,
+                "day": day_name,
                 "shift": shift,
                 "skill": skill
             })
@@ -330,58 +372,91 @@ def export_cnf(filename="output.cnf", clauses=[]):
             f.write(f"{clause}\n")
 
 
-if __name__ == "__main__":
-    scenario, history, weekday, N, D, S, SK, W, nurse_skills, forbidden_shifts, shift_off_requests, nurse_name_to_index, nurse_contracts, contracts = load_data(
-        "Sc-n005w4.json", "H0-n005w4-0.json", "WD-n005w4-5.json")
-    # all_clauses = constraint_H1(
-    #     N, D, S, SK, nurse_skills) + constraint_H3(N, D, S, SK, nurse_skills, forbidden_shifts)
-    # all_clauses += constraint_H2(
-    #     N, D, S, SK, weekday, nurse_skills)
-    # export_cnf(clauses=all_clauses)
-
-    # solution = solve_sat(all_clauses)
-    # if solution:
-    #     assignments = decode_solution(solution)
-    #     for assign in assignments:
-    #         print(assign)
-    # else:
-    #     print("Không tìm thấy lời giải khả thi.")
-    print(constraint_H1(
-        N, D, S, SK, nurse_skills) + constraint_H3(N, D, S, SK, nurse_skills, forbidden_shifts))
-
-    # print(get_Cmin(weekday, 6, 'Early'))
-
-
 # if __name__ == "__main__":
-#     parser = argparse.ArgumentParser(
-#         description="Nurse Rostering Problem Solver")
-#     parser.add_argument('--sce', required=True, help='Scenario File')
-#     parser.add_argument('--his', required=True, help='Initial History File')
-#     parser.add_argument('--week', required=True, help='Week Data File')
-#     parser.add_argument('--sol', required=True, help='Solution File Name')
-#     parser.add_argument('--cusIn', help='Custom Input File')
-#     parser.add_argument('--cusOut', help='Custom Output File')
-#     parser.add_argument('--rand', type=int, help='Random Seed')
-#     parser.add_argument('--timeout', type=int, help='Timeout in Seconds')
+#     scenario, history, weekday, N, D, S, SK, W, nurse_skills, forbidden_shifts, shift_off_requests, nurse_name_to_index, nurse_contracts, contracts, nurse_history = load_data(
+#         "Sc-n005w4.json", "H0-n005w4-1.json", "WD-n005w4-5.json")
+#     hard_clauses = constraint_H1(
+#         N, D, S, SK, nurse_skills) + constraint_H3(N, D, S, SK, nurse_skills, forbidden_shifts)
+#     hard_clauses += constraint_H2(
+#         N, D, S, SK, weekday, nurse_skills)
+#     export_cnf(clauses=hard_clauses)
 
-#     args = parser.parse_args()
+#     soft_clauses = []
+#     # soft_clauses = constraint_S1(
+#     #     N, D, S, SK, weekday, nurse_skills, penalty_weight=30) + constraint_S4_SOR(N, D, S, SK, nurse_skills,
+#     #                                                                                shift_off_requests, nurse_name_to_index, penalty_weight=10) + constraint_S5(N, D, S, nurse_skills, nurse_contracts,
+#                                                                                                                                                             #    contracts, penalty_weight=10)
 
-#     # if args.rand:
-#     #     random.seed(args.rand)
-
-#     scenario, history, weekday, N, D, S, SK, W, nurse_skills = load_data(
-#         args.sce, args.his, args.week)
-#     hard_clauses = constraint_H1(N, D, S, SK, nurse_skills) + constraint_H2(
-#         N, D, S, SK, weekday, nurse_skills) + constraint_H3(N, D, S, SK, nurse_skills)
-
-#     preferences = []  # Có thể thêm custom preferences từ args.cusIn nếu cần
-#     soft_clauses = soft_constraint_max_shifts(N, D, S, SK) + soft_constraint_no_consecutive_night_shifts(
-#         N, D, SK) + soft_constraint_preferences(preferences) + soft_constraint_min_days_off(N, D)
-
-#     solution = solve_maxsat(hard_clauses, soft_clauses, timeout=args.timeout)
+#     solution = solve_maxsat(hard_clauses, soft_clauses)
+#     # solution = solve_sat(all_clauses)
 #     if solution:
 #         assignments = decode_solution(solution)
-#         save_solution(assignments, args.sol)
-#         print(f"Đã lưu giải pháp vào {args.sol}")
+#         for assign in assignments:
+#             print(assign)
 #     else:
 #         print("Không tìm thấy lời giải khả thi.")
+
+
+def save_solution(assignments, scenario_id, week_index, solution_file):
+    solution = {
+        "scenario": scenario_id,
+        "week": week_index,
+        "assignments": assignments
+    }
+    output_dir = "output"
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+    solution_file_path = os.path.join(output_dir, solution_file)
+    with open(solution_file_path, 'w') as f:
+        json.dump(solution, f, indent=4)
+
+
+# python nurse_rostering_sat.py --sce input/Sc-n005w4.json --his input/H0-n005w4-1.json --week input/WD-n005w4-5.json --sol Sol-n005w4-5-0.json
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="Nurse Rostering Problem Solver")
+    parser.add_argument('--sce', required=True, help='Scenario File')
+    parser.add_argument('--his', required=True, help='Initial History File')
+    parser.add_argument('--week', required=True, help='Week Data File')
+    parser.add_argument('--sol', required=True, help='Solution File Name')
+    parser.add_argument('--cusIn', help='Custom Input File')
+    parser.add_argument('--cusOut', help='Custom Output File')
+    parser.add_argument('--rand', type=int, help='Random Seed')
+    parser.add_argument('--timeout', type=int, help='Timeout in Seconds')
+
+    args = parser.parse_args()
+
+    if args.rand:
+        random.seed(args.rand)
+
+    scenario, history, weekday, N, D, S, SK, W, nurse_skills, forbidden_shifts, shift_off_requests, nurse_name_to_index, nurse_contracts, contracts, nurse_history = load_data(
+        args.sce, args.his, args.week)
+
+    hard_clauses = constraint_H1(N, D, S, SK, nurse_skills) + \
+        constraint_H3(N, D, S, SK, nurse_skills, forbidden_shifts)
+    hard_clauses += constraint_H2(N, D, S, SK, weekday, nurse_skills)
+    export_cnf(clauses=hard_clauses)
+
+    soft_clauses = []
+    soft_clauses += constraint_S1(N, D, S, SK,
+                                  weekday, nurse_skills, penalty_weight=30)
+    soft_clauses += constraint_S4_SOR(N, D, S, SK, nurse_skills,
+                                      shift_off_requests, nurse_name_to_index, penalty_weight=10)
+    soft_clauses += constraint_S5(N, D, S, nurse_skills,
+                                  nurse_contracts, contracts, penalty_weight=10)
+
+    solution = solve_maxsat(hard_clauses, soft_clauses)
+    if solution:
+        assignments = decode_solution(solution, nurse_name_to_index)
+
+        # Extract scenario ID from the scenario file
+        scenario_id = scenario['id']
+        week_index = 0  # Assuming we are solving the first week of the period
+
+        # Generate solution file name
+        solution_file = f"sol-week{week_index}.json"
+
+        save_solution(assignments, scenario_id, week_index, solution_file)
+        print(f"Solution saved in output/{solution_file}")
+    else:
+        print("No solutions.")
