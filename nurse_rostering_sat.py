@@ -1,5 +1,7 @@
 # nurse_rostering_sat.py
 
+import time
+import re
 import os
 import json
 import argparse
@@ -9,27 +11,23 @@ from pypblib import pblib
 from pypblib.pblib import PBConfig, Pb2cnf
 from pysat.solvers import Glucose3
 from pysat.formula import WCNF
-from pysat.examples.rc2 import RC2
+from pysat.examples.rc2 import RC2, RC2Stratified
+import concurrent.futures
 
 
-# Dictionary lưu biến và chỉ số SAT
 variable_dict = {}
 reverse_variable_dict = {}
 counter = 1
 max_var_cmin = 0
 
-# Tạo biến chỉ khi cần
-
 
 def get_variable(name):
     global counter
-    if name not in variable_dict:
+    if name not in variable_dict and counter not in reverse_variable_dict:
         variable_dict[name] = counter
         reverse_variable_dict[counter] = name
         counter += 1
     return variable_dict[name]
-
-# Hàm đọc dữ liệu từ các file JSON
 
 
 def load_data(scenario_file, history_file, weekday_file):
@@ -41,7 +39,7 @@ def load_data(scenario_file, history_file, weekday_file):
         weekday = json.load(f)
 
     N = len(scenario['nurses'])
-    D = 7  # Giả định mỗi tuần có 7 ngày
+    D = 7
     S = [shift['id'] for shift in scenario['shiftTypes']]
     SK = scenario['skills']
     W = scenario['numberOfWeeks']
@@ -62,11 +60,9 @@ def load_data(scenario_file, history_file, weekday_file):
                  for contract in scenario['contracts']}
 
     # Load history data
-    nurse_history = {nurse['nurse']
-        : nurse for nurse in history['nurseHistory']}
+    nurse_history = history['nurseHistory']
 
     return scenario, history, weekday, N, D, S, SK, W, nurse_skills, forbidden_shifts, shift_off_requests, nurse_name_to_index, nurse_contracts, contracts, nurse_history
-# Hàm lấy giá trị Cmin từ dữ liệu weekday
 
 
 def get_Cmin(weekday, d, s, sk):
@@ -79,8 +75,6 @@ def get_Cmin(weekday, d, s, sk):
             return req.get(f'requirementOn{day}', {}).get('minimum', 0)
     return 0
 
-# Hàm lấy giá trị Copt từ dữ liệu weekday
-
 
 def get_Copt(weekday, d, s, sk):
     day_mapping = {0: 'Monday', 1: 'Tuesday', 2: 'Wednesday',
@@ -91,8 +85,6 @@ def get_Copt(weekday, d, s, sk):
         if req['shiftType'] == s and req['skill'] == sk:
             return req.get(f'requirementOn{day}', {}).get('optimal', 0)
     return 0
-
-# H1: Mỗi y tá chỉ làm 1 ca mỗi ngày (chỉ kiểm tra các kỹ năng phù hợp)
 
 
 def constraint_H1(N, D, S, SK, nurse_skills):
@@ -127,10 +119,8 @@ def constraint_H1(N, D, S, SK, nurse_skills):
                         clauses.append(" ".join(map(str, clause)) + " 0")
     return clauses
 
-# H3: Cấm các ca làm việc không hợp lệ liên tiếp nhau
 
-
-def constraint_H3(N, D, S, SK, nurse_skills, forbidden_shifts):
+def constraint_H3(N, D, S, SK, nurse_skills, forbidden_shifts, nurse_history):
     clauses = []
     for n in range(N):
         for d in range(D - 1):
@@ -142,9 +132,22 @@ def constraint_H3(N, D, S, SK, nurse_skills, forbidden_shifts):
                             var1 = get_variable(f"x_{n}_{d}_{s1}_{sk1}")
                             var2 = get_variable(f"x_{n}_{d+1}_{s2}_{sk2}")
                             clauses.append(f"-{var1} -{var2} 0")
-    return clauses
 
-# H4: Chỉ y tá có kỹ năng phù hợp mới được phân công
+    # Apply constraints using last assigned shift type from history
+    if nurse_history:
+        for nurse in nurse_history:
+            nurse_id = nurse_name_to_index[nurse['nurse']]
+            last_shift_type = nurse['lastAssignedShiftType']
+            if last_shift_type in [fs['precedingShiftType'] for fs in forbidden_shifts]:
+                for forbidden_shift in forbidden_shifts:
+                    if forbidden_shift['precedingShiftType'] == last_shift_type:
+                        for s2 in forbidden_shift['succeedingShiftTypes']:
+                            for sk in nurse_skills.get(nurse_id, []):
+                                var2 = get_variable(
+                                    f"x_{nurse_id}_0_{s2}_{sk}")
+                                clauses.append(f"-{var2} 0")
+
+    return clauses
 
 
 # def constraint_H4(N, D, S, SK, nurse_skills):
@@ -163,7 +166,6 @@ def constraint_H3(N, D, S, SK, nurse_skills, forbidden_shifts):
 
 def constraint_H2(N, D, S, SK, weekday, nurse_skills, penalty_weight=30):
     hard_clauses = []
-    soft_clauses = []
     config = PBConfig()
     config.set_PB_Encoder(pblib.PB_BDD)
     pb2 = Pb2cnf(config)
@@ -175,44 +177,31 @@ def constraint_H2(N, D, S, SK, weekday, nurse_skills, penalty_weight=30):
                 # Copt = get_Copt(weekday, d, s, sk)
                 nurses = [get_variable(f"x_{n}_{d}_{s}_{sk}") for n in range(
                     N) if sk in nurse_skills.get(n, [])]
+                # print(Cmin, nurses)
 
                 # Ensure at least Cmin nurses are assigned (hard constraint)
                 if Cmin > 0 and len(nurses) >= Cmin:
                     formula = []
                     global max_var_cmin
+
                     max_var_cmin = pb2.encode_at_least_k(
-                        nurses, Cmin, formula, len(variable_dict))
+                        nurses, Cmin, formula, len(variable_dict) + 1)
+
                     for clause in formula:
                         hard_clauses.append(" ".join(map(str, clause)) + " 0")
 
-                # Penalize each missing nurse below Copt (soft constraint)
-                # if Copt > 0:
-                #     formula = []
-                #     max_var_copt = pb2.encode_at_least_k(
-                #         nurses, Copt, formula, max_var_cmin)
-                #     for clause in formula:
-                #         soft_clauses.append(
-                #             (penalty_weight, " ".join(map(str, clause)) + " 0"))
+                    # Update variable_dict with new variables created by pb2.encode_at_least_k
+                    for var in range(len(variable_dict) + 1, max_var_cmin + 1):
+                        variable_dict[f"aux_cmin{var}"] = var
+                        reverse_variable_dict[var] = f"aux_cmin{var}"
+
+                    global counter
+                    counter = max_var_cmin + 1
 
     return hard_clauses
 
-# Hàm giải bài toán bằng SAT Solver (Glucose)
 
-
-# def solve_sat(clauses):
-    solver = Glucose3()
-    for clause in clauses:
-        solver.add_clause(
-            list(map(int, clause.strip().split()[:-1])))  # Bỏ ký tự '0'
-
-    if solver.solve():
-        model = solver.get_model()
-        return [reverse_variable_dict[abs(var)] for var in model if var > 0]
-    else:
-        return None
-
-
-# S1.
+# S1. Optimal coverage
 def constraint_S1(N, D, S, SK, weekday, nurse_skills, penalty_weight=30):
     soft_clauses = []
     config = PBConfig()
@@ -227,15 +216,21 @@ def constraint_S1(N, D, S, SK, weekday, nurse_skills, penalty_weight=30):
                     N) if sk in nurse_skills.get(n, [])]
 
                 # Penalize each missing nurse below Copt (soft constraint)
-                if Copt > 0:
+                if Copt > 0 and len(nurses) >= Copt:
                     formula = []
-                    print(max_var_cmin)
                     max_var_copt = pb2.encode_at_least_k(
-                        nurses, Copt, formula, max_var_cmin)
+                        nurses, Copt, formula, len(variable_dict) + 1)
                     for clause in formula:
                         soft_clauses.append(
                             (penalty_weight, " ".join(map(str, clause)) + " 0"))
 
+                    for var in range(len(variable_dict) + 1, max_var_copt + 1):
+                        variable_dict[f"aux_cmax{var}"] = var
+                        reverse_variable_dict[var] = f"aux_cmax{var}"
+
+                    global counter
+                    counter = max_var_copt + 1
+    # print(soft_clauses)
     return soft_clauses
 
 # S4. Preferences(10)
@@ -278,7 +273,7 @@ def constraint_S4_SOR(N, D, S, SK, nurse_skills, shift_off_requests, nurse_name_
 # S5: Complete Weekend
 
 
-def constraint_S5(N, D, S, nurse_skills, nurse_contracts, contracts, penalty_weight=10):
+def constraint_S5(N, D, S, nurse_skills, nurse_contracts, contracts, penalty_weight=30):
     soft_clauses = []
     weekends = [(5, 6)]  # Saturday (5) and Sunday (6)
 
@@ -287,28 +282,28 @@ def constraint_S5(N, D, S, nurse_skills, nurse_contracts, contracts, penalty_wei
         contract = contracts[contract_id]
 
         if contract.get('completeWeekends', 0) == 1:
-            for d1, d2 in weekends:
-                # p_{n, d} = 1 if the nurse works on any shift during the day
-                p_d1_vars = [get_variable(f"x_{n}_{d1}_{s}_{sk}")
-                             for s in S for sk in nurse_skills.get(n, [])]
-                p_d2_vars = [get_variable(f"x_{n}_{d2}_{s}_{sk}")
-                             for s in S for sk in nurse_skills.get(n, [])]
+            d1, d2 = weekends[0]
+            # p_{n, d} = 1 if the nurse works on any shift during the day
+            p_d1_vars = [get_variable(f"x_{n}_{d1}_{s}_{sk}")
+                         for s in S for sk in nurse_skills.get(n, [])]
+            p_d2_vars = [get_variable(f"x_{n}_{d2}_{s}_{sk}")
+                         for s in S for sk in nurse_skills.get(n, [])]
 
-                # Add clauses to ensure the nurse works both days or none
-                for p_d1 in p_d1_vars:
-                    for p_d2 in p_d2_vars:
-                        # If the nurse must work both days or none
-                        # If the nurse works on Saturday, they must work on Sunday and vice versa
-                        soft_clauses.append(
-                            (penalty_weight, f"-{p_d1} {p_d2} 0"))
-                        soft_clauses.append(
-                            (penalty_weight, f"{p_d1} -{p_d2} 0"))
+            # Add clauses to ensure the nurse works both days or none
+            for p_d1 in p_d1_vars:
+                for p_d2 in p_d2_vars:
+                    # If the nurse must work both days or none
+                    # If the nurse works on Saturday, they must work on Sunday and vice versa
+                    soft_clauses.append(
+                        (penalty_weight, f"-{p_d1} {p_d2} 0"))
+                    soft_clauses.append(
+                        (penalty_weight, f"{p_d1} -{p_d2} 0"))
 
     return soft_clauses
 
 
-# Hàm giải bài toán bằng SAT Solver (Glucose)
-def solve_sat(clauses):
+# SAT Solver (Glucose)
+# def solve_maxsat(clauses):
     solver = Glucose3()
     for clause in clauses:
         solver.add_clause(
@@ -316,11 +311,51 @@ def solve_sat(clauses):
 
     if solver.solve():
         model = solver.get_model()
-        return [reverse_variable_dict[abs(var)] for var in model if var > 0]
-# Hàm giải bài toán bằng MaxSAT Solver (RC2)
+        print("Model found:", model)
+        print("Reverse variable dict:", reverse_variable_dict)
+        solution = [reverse_variable_dict[abs(var)] for var in model if var > 0 and abs(
+            var) in reverse_variable_dict]
+        print("Solution:", solution)
+        return solution
+    else:
+        print("No solution found.")
+        return []
 
 
-def solve_maxsat(hard_clauses, soft_clauses):
+# MaxSAT Solver (RC2)
+def solve_maxsat_RC2_stratified(hard_clauses, soft_clauses, timeout, solver_type='rc2stratified'):
+    wcnf = WCNF()
+
+    # Add hard constraints
+    for clause in hard_clauses:
+        wcnf.append([int(lit) for lit in clause.split() if lit != '0'])
+
+    # Add soft constraints with penalty
+    for weight, clause in soft_clauses:
+        wcnf.append([int(lit)
+                    for lit in clause.split() if lit != '0'], weight=weight)
+
+    def solve():
+        if solver_type == 'rc2stratified':
+            solver = RC2Stratified(wcnf)
+        elif solver_type == 'rc2':
+            solver = RC2(wcnf)
+        else:
+            raise ValueError(f"Unknown solver type: {solver_type}")
+
+        return solver.compute()
+
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        future = executor.submit(solve)
+        try:
+            solution = future.result(timeout=timeout)  # Set timeout
+            return [reverse_variable_dict[abs(var)] for var in solution if var > 0] if solution else None
+        except concurrent.futures.TimeoutError:
+            print("MaxSAT solving timed out!")
+            return None
+
+
+def solve_maxsat_RC2(hard_clauses, soft_clauses):
     wcnf = WCNF()
 
     # Add hard constraints
@@ -340,8 +375,6 @@ def solve_maxsat(hard_clauses, soft_clauses):
     else:
         return None
 
-# Hàm chuyển từ index về tên biến ban đầu
-
 
 def decode_solution(solution, nurse_name_to_index):
     assignments = []
@@ -357,12 +390,10 @@ def decode_solution(solution, nurse_name_to_index):
             assignments.append({
                 "nurse": nurse_name,
                 "day": day_name,
-                "shift": shift,
+                "shiftType": shift,
                 "skill": skill
             })
     return assignments
-
-# Xuất file CNF
 
 
 def export_cnf(filename="output.cnf", clauses=[]):
@@ -397,21 +428,47 @@ def export_cnf(filename="output.cnf", clauses=[]):
 #         print("Không tìm thấy lời giải khả thi.")
 
 
+def extract_week_index(solution_file):
+    match = re.search(r'week(\d+)', solution_file)
+    if match:
+        return int(match.group(1))
+    else:
+        return None
+
+
 def save_solution(assignments, scenario_id, week_index, solution_file):
     solution = {
         "scenario": scenario_id,
         "week": week_index,
         "assignments": assignments
     }
-    output_dir = "output"
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-    solution_file_path = os.path.join(output_dir, solution_file)
-    with open(solution_file_path, 'w') as f:
+    # output_dir = "output"
+    # if not os.path.exists(output_dir):
+    #     os.makedirs(output_dir)
+    # solution_file_path = os.path.join(output_dir, solution_file)
+    with open(solution_file, 'w') as f:
         json.dump(solution, f, indent=4)
 
 
-# python nurse_rostering_sat.py --sce input/Sc-n005w4.json --his input/H0-n005w4-1.json --week input/WD-n005w4-5.json --sol Sol-n005w4-5-0.json
+def save_last_sunday_shifts(assignments, filename):
+    sunday_shifts = [
+        assignment for assignment in assignments if assignment['day'] == 'Sun']
+    with open(filename, 'w') as f:
+        json.dump(sunday_shifts, f, indent=4)
+
+
+def load_last_sunday_shifts(filename):
+    if os.path.exists(filename):
+        with open(filename, 'r') as f:
+            return json.load(f)
+    return []
+
+
+# python nurse_rostering_sat.py `
+# --sce input/n012w8/Sc-n012w8.json `
+# --his input/n012w8/H0-n012w8-0.json `
+# --week input/n012w8/WD-n012w8-3.json `
+# --sol week0.json
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Nurse Rostering Problem Solver")
@@ -422,7 +479,7 @@ if __name__ == "__main__":
     parser.add_argument('--cusIn', help='Custom Input File')
     parser.add_argument('--cusOut', help='Custom Output File')
     parser.add_argument('--rand', type=int, help='Random Seed')
-    parser.add_argument('--timeout', type=int, help='Timeout in Seconds')
+    parser.add_argument('--timeout', type=float, help='Timeout in Seconds')
 
     args = parser.parse_args()
 
@@ -432,31 +489,140 @@ if __name__ == "__main__":
     scenario, history, weekday, N, D, S, SK, W, nurse_skills, forbidden_shifts, shift_off_requests, nurse_name_to_index, nurse_contracts, contracts, nurse_history = load_data(
         args.sce, args.his, args.week)
 
-    hard_clauses = constraint_H1(N, D, S, SK, nurse_skills) + \
-        constraint_H3(N, D, S, SK, nurse_skills, forbidden_shifts)
+    hard_clauses = []
+    hard_clauses += constraint_H1(N, D, S, SK, nurse_skills)
+    hard_clauses += constraint_H3(N, D, S, SK,
+                                  nurse_skills, forbidden_shifts, nurse_history)
     hard_clauses += constraint_H2(N, D, S, SK, weekday, nurse_skills)
     export_cnf(clauses=hard_clauses)
 
     soft_clauses = []
     soft_clauses += constraint_S1(N, D, S, SK,
                                   weekday, nurse_skills, penalty_weight=30)
+    soft_clauses += constraint_S5(N, D, S, nurse_skills,
+                                  nurse_contracts, contracts, penalty_weight=30)
     soft_clauses += constraint_S4_SOR(N, D, S, SK, nurse_skills,
                                       shift_off_requests, nurse_name_to_index, penalty_weight=10)
-    soft_clauses += constraint_S5(N, D, S, nurse_skills,
-                                  nurse_contracts, contracts, penalty_weight=10)
 
-    solution = solve_maxsat(hard_clauses, soft_clauses)
+    print(f"Number of hard clauses: {len(hard_clauses)}")
+    print(f"Number of soft clauses: {len(soft_clauses)}")
+    print(f"Total number of variables: {counter - 1}")
+    # solution = solve_maxsat_RC2(hard_clauses, soft_clauses)
+    solution = solve_maxsat_RC2_stratified(
+        hard_clauses, soft_clauses, timeout=args.timeout)
     if solution:
         assignments = decode_solution(solution, nurse_name_to_index)
 
         # Extract scenario ID from the scenario file
         scenario_id = scenario['id']
-        week_index = 0  # Assuming we are solving the first week of the period
+        # Assuming we are solving the first week of the period
+        week_index = extract_week_index(args.sol)
 
         # Generate solution file name
-        solution_file = f"sol-week{week_index}.json"
+        solution_file = args.sol
 
         save_solution(assignments, scenario_id, week_index, solution_file)
-        print(f"Solution saved in output/{solution_file}")
+
+        print(f"Solution saved in {solution_file}")
     else:
         print("No solutions.")
+
+# 4 weeks
+# java -jar Simulator_withTimeout.jar `
+# --his input\n005w4\H0-n005w4-0.json `
+# --sce input\n005w4\Sc-n005w4.json `
+# --weeks input\n005w4\WD-n005w4-1.json input\n005w4\WD-n005w4-2.json input\n005w4\WD-n005w4-3.json input\n005w4\WD-n005w4-3.json `
+# --solver "python nurse_rostering_sat.py" `
+# --runDir SC_Encoding/ `
+# --outDir "D:\UET_Materials\UET_6th_Semester(23-24)\NCKH\Nurse Rostering Prob\NRP Solver\Simulator_withTimeout\Simulator_out" `
+# --cus `
+# --timeout 4
+
+# 4 weeks
+# java -jar Simulator_withTimeout.jar `
+# --his input\n005w4\H0-n005w4-1.json `
+# --sce input\n005w4\Sc-n005w4.json `
+# --weeks input\n005w4\WD-n005w4-5.json input\n005w4\WD-n005w4-3.json input\n005w4\WD-n005w4-1.json input\n005w4\WD-n005w4-0.json `
+# --solver "python nurse_rostering_sat.py" `
+# --runDir SC_Encoding/ `
+# --outDir "D:\UET_Materials\UET_6th_Semester(23-24)\NCKH\Nurse Rostering Prob\NRP Solver\Simulator_withTimeout\Simulator_out" `
+# --cus `
+# --timeout 4
+
+
+# 4 weeks
+# java -jar Simulator_withTimeout.jar `
+# --his input\n005w4\H0-n005w4-2.json `
+# --sce input\n005w4\Sc-n005w4.json `
+# --weeks input\n005w4\WD-n005w4-6.json input\n005w4\WD-n005w4-7.json input\n005w4\WD-n005w4-8.json input\n005w4\WD-n005w4-9.json `
+# --solver "python nurse_rostering_sat.py" `
+# --runDir SC_Encoding/ `
+# --outDir "D:\UET_Materials\UET_6th_Semester(23-24)\NCKH\Nurse Rostering Prob\NRP Solver\Simulator_withTimeout\Simulator_out" `
+# --cus `
+# --timeout 4
+
+
+# n21ww4
+# 4 weeks
+# java -jar Simulator_withTimeout.jar `
+# --his input\n021w4\H0-n021w4-0.json `
+# --sce input\n021w4\Sc-n021w4.json `
+# --weeks input\n021w4\WD-n021w4-5.json input\n021w4\WD-n021w4-4.json input\n021w4\WD-n021w4-1.json input\n021w4\WD-n021w4-2.json `
+# --solver "python nurse_rostering_sat.py" `
+# --runDir SC_Encoding/ `
+# --outDir "D:\UET_Materials\UET_6th_Semester(23-24)\NCKH\Nurse Rostering Prob\NRP Solver\Simulator_withTimeout\Simulator_out" `
+# --cus
+
+# 4 weeks
+# java -jar Simulator_withTimeout.jar `
+# --his input\n021w4\H0-n021w4-1.json `
+# --sce input\n021w4\Sc-n021w4.json `
+# --weeks input\n021w4\WD-n021w4-0.json input\n021w4\WD-n021w4-6.json input\n021w4\WD-n021w4-1.json input\n021w4\WD-n021w4-6.json `
+# --solver "python nurse_rostering_sat.py" `
+# --runDir SC_Encoding/ `
+# --outDir "D:\UET_Materials\UET_6th_Semester(23-24)\NCKH\Nurse Rostering Prob\NRP Solver\Simulator_withTimeout\Simulator_out" `
+# --cus
+
+# 4 weeks
+# java -jar Simulator_withTimeout.jar `
+# --his input\n021w4\H0-n021w4-2.json `
+# --sce input\n021w4\Sc-n021w4.json `
+# --weeks input\n021w4\WD-n021w4-8.json input\n021w4\WD-n021w4-1.json input\n021w4\WD-n021w4-4.json input\n021w4\WD-n021w4-3.json `
+# --solver "python nurse_rostering_sat.py" `
+# --runDir SC_Encoding/ `
+# --outDir "D:\UET_Materials\UET_6th_Semester(23-24)\NCKH\Nurse Rostering Prob\NRP Solver\Simulator_withTimeout\Simulator_out" `
+# --cus
+
+# n12w8
+# 8 weeks
+# java -jar Simulator_withTimeout.jar `
+# --his input\n012w8\H0-n012w8-0.json `
+# --sce input\n012w8\Sc-n012w8.json `
+# --weeks input\n012w8\WD-n012w8-3.json input\n012w8\WD-n012w8-5.json input\n012w8\WD-n012w8-0.json input\n012w8\WD-n012w8-2.json input\n012w8\WD-n012w8-0.json input\n012w8\WD-n012w8-4.json input\n012w8\WD-n012w8-5.json input\n012w8\WD-n012w8-2.json `
+# --solver "python nurse_rostering_sat.py" `
+# --runDir SC_Encoding/ `
+# --outDir "D:\UET_Materials\UET_6th_Semester(23-24)\NCKH\Nurse Rostering Prob\NRP Solver\Simulator_withTimeout\Simulator_out" `
+# --cus `
+# --timeout 30
+
+# 8 weeks
+# java -jar Simulator_withTimeout.jar `
+# --his input\n012w8\H0-n012w8-1.json `
+# --sce input\n012w8\Sc-n012w8.json `
+# --weeks input\n012w8\WD-n012w8-7.json input\n012w8\WD-n012w8-7.json input\n012w8\WD-n012w8-0.json input\n012w8\WD-n012w8-8.json input\n012w8\WD-n012w8-9.json input\n012w8\WD-n012w8-3.json input\n012w8\WD-n012w8-2.json input\n012w8\WD-n012w8-6.json `
+# --solver "python nurse_rostering_sat.py" `
+# --runDir SC_Encoding/ `
+# --outDir "D:\UET_Materials\UET_6th_Semester(23-24)\NCKH\Nurse Rostering Prob\NRP Solver\Simulator_withTimeout\Simulator_out" `
+# --cus `
+# --timeout 30
+
+# 8 weeks
+# java -jar Simulator_withTimeout.jar `
+# --his input\n012w8\H0-n012w8-2.json `
+# --sce input\n012w8\Sc-n012w8.json `
+# --weeks input\n012w8\WD-n012w8-4.json input\n012w8\WD-n012w8-5.json input\n012w8\WD-n012w8-6.json input\n012w8\WD-n012w8-7.json input\n012w8\WD-n012w8-2.json input\n012w8\WD-n012w8-1.json input\n012w8\WD-n012w8-2.json input\n012w8\WD-n012w8-1.json `
+# --solver "python nurse_rostering_sat.py" `
+# --runDir SC_Encoding/ `
+# --outDir "D:\UET_Materials\UET_6th_Semester(23-24)\NCKH\Nurse Rostering Prob\NRP Solver\Simulator_withTimeout\Simulator_out" `
+# --cus `
+# --timeout 30
