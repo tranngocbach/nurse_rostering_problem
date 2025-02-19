@@ -1,5 +1,6 @@
 # nurse_rostering_sat.py
 
+from ortools.sat.python import cp_model
 import time
 import re
 import os
@@ -174,10 +175,8 @@ def constraint_H2(N, D, S, SK, weekday, nurse_skills, penalty_weight=30):
         for s in S:
             for sk in SK:
                 Cmin = get_Cmin(weekday, d, s, sk)
-                # Copt = get_Copt(weekday, d, s, sk)
                 nurses = [get_variable(f"x_{n}_{d}_{s}_{sk}") for n in range(
                     N) if sk in nurse_skills.get(n, [])]
-                # print(Cmin, nurses)
 
                 # Ensure at least Cmin nurses are assigned (hard constraint)
                 if Cmin > 0 and len(nurses) >= Cmin:
@@ -283,6 +282,45 @@ def constraint_S5(N, D, S, nurse_skills, nurse_contracts, contracts, penalty_wei
 
         if contract.get('completeWeekends', 0) == 1:
             d1, d2 = weekends[0]
+            # Create variables for working on Saturday and Sunday
+            w1 = get_variable(f"w1_{n}")
+            w2 = get_variable(f"w2_{n}")
+
+            # p = 1 if the nurse works on any shift during the day
+            p_d1_vars = [get_variable(f"x_{n}_{d1}_{s}_{sk}")
+                         for s in S for sk in nurse_skills.get(n, [])]
+            p_d2_vars = [get_variable(f"x_{n}_{d2}_{s}_{sk}")
+                         for s in S for sk in nurse_skills.get(n, [])]
+
+            # Create clauses to ensure that if w1 is true, then at least one of p_d1_vars is true
+            soft_clauses.append(
+                (penalty_weight, f"-{w1} {' '.join(map(str, p_d1_vars))} 0"))
+            for p_d1 in p_d1_vars:
+                soft_clauses.append((penalty_weight, f"-{p_d1} {w1} 0"))
+
+            # Create clauses to ensure that if w2 is true, then at least one of p_d2_vars is true
+            soft_clauses.append(
+                (penalty_weight, f"-{w2} {' '.join(map(str, p_d2_vars))} 0"))
+            for p_d2 in p_d2_vars:
+                soft_clauses.append((penalty_weight, f"-{p_d2} {w2} 0"))
+
+            # Add clauses to ensure the nurse works both days or none
+            soft_clauses.append((penalty_weight, f"-{w1} {w2} 0"))
+            soft_clauses.append((penalty_weight, f"{w1} -{w2} 0"))
+
+    return soft_clauses
+
+
+def old_constraint_S5(N, D, S, nurse_skills, nurse_contracts, contracts, penalty_weight=30):
+    soft_clauses = []
+    weekends = [(5, 6)]  # Saturday (5) and Sunday (6)
+
+    for n in range(N):
+        contract_id = nurse_contracts[n]
+        contract = contracts[contract_id]
+
+        if contract.get('completeWeekends', 0) == 1:
+            d1, d2 = weekends[0]
             # p_{n, d} = 1 if the nurse works on any shift during the day
             p_d1_vars = [get_variable(f"x_{n}_{d1}_{s}_{sk}")
                          for s in S for sk in nurse_skills.get(n, [])]
@@ -300,8 +338,6 @@ def constraint_S5(N, D, S, nurse_skills, nurse_contracts, contracts, penalty_wei
                         (penalty_weight, f"{p_d1} -{p_d2} 0"))
 
     return soft_clauses
-
-
 # SAT Solver (Glucose)
 # def solve_maxsat(clauses):
     solver = Glucose3()
@@ -372,6 +408,47 @@ def solve_maxsat_RC2(hard_clauses, soft_clauses):
 
     if solution:
         return [reverse_variable_dict[abs(var)] for var in solution if var > 0]
+    else:
+        return None
+
+
+def solve_maxsat_CP_SAT(hard_clauses, soft_clauses):
+    model = cp_model.CpModel()
+
+    # Dictionary to store variables
+    variables = {}
+    reverse_variable_dict = {}
+
+    # Function to get or create variables
+    def get_variable(lit):
+        if abs(lit) not in variables:
+            variables[abs(lit)] = model.NewBoolVar(f'x_{abs(lit)}')
+            reverse_variable_dict[abs(lit)] = f'x_{abs(lit)}'
+        return variables[abs(lit)] if lit > 0 else variables[abs(lit)].Not()
+
+    # Add hard constraints
+    for clause in hard_clauses:
+        model.AddBoolOr([get_variable(int(lit))
+                        for lit in clause.split() if lit != '0'])
+
+    # Add soft constraints with penalty
+    soft_penalty = []
+    for weight, clause in soft_clauses:
+        soft_var = model.NewBoolVar(f'soft_{len(soft_penalty)}')
+        literals = [get_variable(int(lit))
+                    for lit in clause.split() if lit != '0']
+        model.AddBoolOr(literals + [soft_var])
+        soft_penalty.append(weight * soft_var)
+
+    # Minimize soft constraint violations
+    model.Minimize(sum(soft_penalty))
+
+    # Solve the model
+    solver = cp_model.CpSolver()
+    status = solver.Solve(model)
+
+    if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
+        return [reverse_variable_dict[abs(var)] for var, obj in variables.items() if solver.Value(obj)]
     else:
         return None
 
@@ -501,6 +578,8 @@ if __name__ == "__main__":
                                   weekday, nurse_skills, penalty_weight=30)
     soft_clauses += constraint_S5(N, D, S, nurse_skills,
                                   nurse_contracts, contracts, penalty_weight=30)
+    # soft_clauses += old_constraint_S5(N, D, S, nurse_skills,
+    #                                   nurse_contracts, contracts, penalty_weight=30)
     soft_clauses += constraint_S4_SOR(N, D, S, SK, nurse_skills,
                                       shift_off_requests, nurse_name_to_index, penalty_weight=10)
 
@@ -510,6 +589,8 @@ if __name__ == "__main__":
     # solution = solve_maxsat_RC2(hard_clauses, soft_clauses)
     solution = solve_maxsat_RC2_stratified(
         hard_clauses, soft_clauses, timeout=args.timeout)
+    # solution = solve_maxsat_CP_SAT(
+    #     hard_clauses, soft_clauses)
     if solution:
         assignments = decode_solution(solution, nurse_name_to_index)
 
@@ -621,6 +702,29 @@ if __name__ == "__main__":
 # --his input\n012w8\H0-n012w8-2.json `
 # --sce input\n012w8\Sc-n012w8.json `
 # --weeks input\n012w8\WD-n012w8-4.json input\n012w8\WD-n012w8-5.json input\n012w8\WD-n012w8-6.json input\n012w8\WD-n012w8-7.json input\n012w8\WD-n012w8-2.json input\n012w8\WD-n012w8-1.json input\n012w8\WD-n012w8-2.json input\n012w8\WD-n012w8-1.json `
+# --solver "python nurse_rostering_sat.py" `
+# --runDir SC_Encoding/ `
+# --outDir "D:\UET_Materials\UET_6th_Semester(23-24)\NCKH\Nurse Rostering Prob\NRP Solver\Simulator_withTimeout\Simulator_out" `
+# --cus `
+# --timeout 30
+
+
+# 30n4w
+# 4 weeks
+# java -jar Simulator_withTimeout.jar `
+# --his input\n030w4\H0-n030w4-2.json `
+# --sce input\n030w4\Sc-n030w4.json `
+# --weeks input\n030w4\WD-n030w4-8.json input\n030w4\WD-n030w4-1.json input\n030w4\WD-n030w4-4.json input\n030w4\WD-n030w4-3.json `
+# --solver "python nurse_rostering_sat.py" `
+# --runDir SC_Encoding/ `
+# --outDir "D:\UET_Materials\UET_6th_Semester(23-24)\NCKH\Nurse Rostering Prob\NRP Solver\Simulator_withTimeout\Simulator_out" `
+# --cus
+
+# 8 weeks
+# java -jar Simulator_withTimeout.jar `
+# --his input\n120w8\H0-n120w8-2.json `
+# --sce input\n120w8\Sc-n120w8.json `
+# --weeks input\n120w8\WD-n120w8-4.json input\n120w8\WD-n120w8-5.json input\n120w8\WD-n120w8-6.json input\n120w8\WD-n120w8-7.json input\n120w8\WD-n120w8-3.json input\n120w8\WD-n120w8-1.json input\n120w8\WD-n120w8-2.json input\n120w8\WD-n120w8-1.json `
 # --solver "python nurse_rostering_sat.py" `
 # --runDir SC_Encoding/ `
 # --outDir "D:\UET_Materials\UET_6th_Semester(23-24)\NCKH\Nurse Rostering Prob\NRP Solver\Simulator_withTimeout\Simulator_out" `
