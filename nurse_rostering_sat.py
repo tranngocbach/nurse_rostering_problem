@@ -66,8 +66,6 @@ def load_data(scenario_file, history_file, weekday_file):
     # Map shift types by ID
     shift_types = {shift['id']: shift for shift in scenario['shiftTypes']}
 
-
-
     return scenario, history, weekday, N, D, S, SK, W, nurse_skills, forbidden_shifts, shift_off_requests, nurse_name_to_index, nurse_contracts, contracts, nurse_history, shift_types
 
 
@@ -99,36 +97,26 @@ def constraint_H1(N, D, S, SK, nurse_skills):
         for d in range(D):
             shifts = [get_variable(f"x_{n}_{d}_{s}_{sk}")
                       for s in S for sk in nurse_skills.get(n, [])]
+
             e_var = get_variable(f"e_{n}_{d}")
             clauses.append(f"-{e_var} {' '.join(map(str, shifts))} 0")
             for shift in shifts:
                 clauses.append(f"-{shift} {e_var} 0")
+
+            # Create the "o" variable for each shift
+            for s in S:
+                o_var = get_variable(f"o_{n}_{d}_{s}")
+                shift_vars = [get_variable(
+                    f"x_{n}_{d}_{s}_{sk}") for sk in nurse_skills.get(n, [])]
+                # If "o" is true, at least one of the shift variables must be true
+                clauses.append(f"-{o_var} {' '.join(map(str, shift_vars))} 0")
+                # If any shift variable is true, "o" must be true
+                for shift_var in shift_vars:
+                    clauses.append(f"-{shift_var} {o_var} 0")
+
             for (s1, s2) in combinations(shifts, 2):
                 clauses.append(f"-{s1} -{s2} 0")
     return clauses
-
-# H2: Đảm bảo số lượng y tá tối thiểu cho mỗi ca (BDD Encoding)
-# def constraint_H2(N, D, S, SK, weekday, nurse_skills):
-    clauses = []
-    config = PBConfig()
-    config.set_PB_Encoder(pblib.PB_BDD)
-    pb2 = Pb2cnf(config)
-    for d in range(D):
-        for s in S:
-            for sk in SK:
-                Cmin = get_Cmin(weekday, d, s, sk)
-                nurses = [get_variable(f"x_{n}_{d}_{s}_{sk}") for n in range(
-                    N) if sk in nurse_skills.get(n, [])]
-
-                if Cmin > 0 and len(nurses) >= Cmin:
-                    formula = []
-
-                    max_var = pb2.encode_at_least_k(
-                        nurses, Cmin, formula, len(variable_dict))
-                    for clause in formula:
-                        clauses.append(" ".join(map(str, clause)) + " 0")
-    return clauses
-
 
 def constraint_H3(N, D, S, SK, nurse_skills, forbidden_shifts, nurse_history):
     clauses = []
@@ -292,10 +280,10 @@ def constraint_S5(N, D, S, nurse_skills, nurse_contracts, contracts, penalty_wei
         if contract.get('completeWeekends', 0) == 1:
             d1, d2 = weekends[0]
             # Create variables for working on Saturday and Sunday
-            # w1 = get_variable(f"w1_{n}")
-            # w2 = get_variable(f"w2_{n}")
             w1 = get_variable(f"e_{n}_{d1}")
             w2 = get_variable(f"e_{n}_{d2}")
+            # w1 = get_variable(f"w1_{n}")
+            # w2 = get_variable(f"w2_{n}")
 
             # # p = 1 if the nurse works on any shift during the day
             # p_d1_vars = [get_variable(f"x_{n}_{d1}_{s}_{sk}")
@@ -315,31 +303,14 @@ def constraint_S5(N, D, S, nurse_skills, nurse_contracts, contracts, penalty_wei
             # for p_d2 in p_d2_vars:
             #     soft_clauses.append((penalty_weight, f"-{p_d2} {w2} 0"))
 
-            # # Add clauses to ensure the nurse works both days or none
+            # Add clauses to ensure the nurse works both days or none
             soft_clauses.append((penalty_weight, f"-{w1} {w2} 0"))
             soft_clauses.append((penalty_weight, f"{w1} -{w2} 0"))
 
     return soft_clauses
 
 
-# def constraint_S5(N, D, S, nurse_skills, nurse_contracts, contracts, penalty_weight=30):
-    soft_clauses = []
-    weekends = [(5, 6)]  # Saturday (5) and Sunday (6)
 
-    for n in range(N):
-        contract_id = nurse_contracts[n]
-        contract = contracts[contract_id]
-
-        if contract.get('completeWeekends', 0) == 1:
-            d1, d2 = weekends[0]
-            # Create variables for working on Saturday and Sunday
-            e_d1 = get_variable(f"e_{n}_{d1}")
-            e_d2 = get_variable(f"e_{n}_{d2}")
-
-            soft_clauses.append((penalty_weight, f"-{e_d1} {e_d2} 0"))
-            soft_clauses.append((penalty_weight, f"{e_d1} -{e_d2} 0"))
-
-    return soft_clauses
 # SAT Solver (Glucose)
 # def solve_maxsat(clauses):
     solver = Glucose3()
@@ -449,81 +420,157 @@ def constraint_S2_cons_work_day(nurse_history, nurse_name_to_index, nurse_contra
             else:
                 needed_days = CW_min - cons_working_days
                 for i in range(needed_days):
-                    var = get_variable(f"e{nurse_id}_{i}")
+                    var = get_variable(f"e_{nurse_id}_{i}")
                     soft_clauses.append((penalty_weight, f"{var} 0"))
 
     return soft_clauses
 
 
-def constraint_S2_cons_work_shift(nurse_history, nurse_name_to_index, nurse_contracts, contracts, penalty_weight=30):
+def constraint_S2_cons_work_shift(nurse_history, nurse_name_to_index, shift_types, penalty_weight=15):
     soft_clauses = []
 
     for nurse in nurse_history:
-        cons_working_shifts = nurse.get('numberOfConsecutiveAssignments', 0)
+        last_cons_working_shifts = nurse.get(
+            'numberOfConsecutiveAssignments', 0)
         last_working_shift = nurse.get('lastAssignedShiftType', 0)
         nurse_id = nurse_name_to_index[nurse['nurse']]
 
-        # contract_id = nurse_contracts[nurse_id]
-        # contract = contracts[contract_id]
-        # CS_max = contract.get('maximumNumberOfAssignments', 0)
-        # CS_min = contract.get('minimumNumberOfAssignments', 0)
+        for shift_id, shift_info in shift_types.items():
+            CS_max = shift_info.get('maximumNumberOfConsecutiveAssignments', 0)
+            CS_min = shift_info.get('minimumNumberOfConsecutiveAssignments', 0)
 
-        # # CW_max
-        # if cons_working_shifts == 0:
-        #     for d in range(7 - CW_max):
-        #         clause = []
-        #         for j in range(CW_max + 1):
-        #             var = get_variable(f"e_{nurse_id}_{d + j}")
-        #             clause.append(f"-{var}")
-        #         soft_clauses.append((penalty_weight, " ".join(clause) + " 0"))
-        # else:
-        #     if cons_working_shifts >= CW_max:
-        #         cons_working_shifts = CW_max
+            if shift_id != last_working_shift:
+                cons_working_shifts = 0
+            else:
+                cons_working_shifts = last_cons_working_shifts
 
-        #     for d in range(6, CW_max - 1, -1):
-        #         clause = []
-        #         for j in range(CW_max + 1):
-        #             var = get_variable(f"e_{nurse_id}_{d - j}")
-        #             clause.append(f"-{var}")
-        #         soft_clauses.append((penalty_weight, " ".join(clause) + " 0"))
+            # CS_max
+            if cons_working_shifts == 0:
+                for d in range(7 - CS_max):
+                    clause = []
+                    for j in range(CS_max + 1):
+                        var = get_variable(
+                            f"o_{nurse_id}_{d + j}_{shift_id}")
+                        clause.append(f"-{var}")
+                    soft_clauses.append(
+                        (penalty_weight, " ".join(clause) + " 0"))
+            else:
+                if cons_working_shifts >= CS_max:
+                    cons_working_shifts = CS_max
 
-        #     for d in range(CW_max - 1, -1, -1):
-        #         clause = []
-        #         if abs(d - CW_max) > cons_working_shifts:
-        #             break
-        #         for j in range(d + 1):
-        #             var = get_variable(f"e_{nurse_id}_{d - j}")
-        #             clause.append(f"-{var}")
-        #         soft_clauses.append((penalty_weight, " ".join(clause) + " 0"))
+                for d in range(6, CS_max - 1, -1):
+                    clause = []
+                    for j in range(CS_max + 1):
+                        var = get_variable(f"o_{nurse_id}_{d - j}_{shift_id}")
+                        clause.append(f"-{var}")
+                    soft_clauses.append(
+                        (penalty_weight, " ".join(clause) + " 0"))
 
-        # # CW_min
-        # for d in range(7 - CW_min + 1):
-        #     clause = []
-        #     today = get_variable(f"e_{nurse_id}_{d}")
-        #     if d == 0:
-        #         clause.append(f"-{today}")
-        #     else:
-        #         yesterday = get_variable(f"e_{nurse_id}_{d - 1}")
-        #         clause.append(f"-{today} {yesterday}")
-        #     for j in range(1, CW_min):
-        #         next_day = get_variable(f"e_{nurse_id}_{d + j}")
-        #         soft_clauses.append(
-        #             (penalty_weight, " ".join(clause) + f" {next_day} 0"))
+                for d in range(CS_max - 1, -1, -1):
+                    clause = []
+                    if abs(d - CS_max) > cons_working_shifts:
+                        break
+                    for j in range(d + 1):
+                        var = get_variable(f"o_{nurse_id}_{d - j}_{shift_id}")
+                        clause.append(f"-{var}")
+                    soft_clauses.append(
+                        (penalty_weight, " ".join(clause) + " 0"))
 
-        # if cons_working_shifts != 0:
-        #     if cons_working_shifts >= CW_min:
-        #         continue
-        #     else:
-        #         needed_days = CW_min - cons_working_shifts
-        #         for i in range(needed_days):
-        #             var = get_variable(f"e{nurse_id}_{i}")
-        #             soft_clauses.append((penalty_weight, f"{var} 0"))
+            # CS_min
+            for d in range(7 - CS_min + 1):
+                clause = []
+                today = get_variable(f"o_{nurse_id}_{d}_{shift_id}")
+                if d == 0:
+                    clause.append(f"-{today}")
+                else:
+                    yesterday = get_variable(
+                        f"o_{nurse_id}_{d - 1}_{shift_id}")
+                    clause.append(f"-{today} {yesterday}")
+                for j in range(1, CS_min):
+                    next_day = get_variable(f"o_{nurse_id}_{d + j}_{shift_id}")
+                    soft_clauses.append(
+                        (penalty_weight, " ".join(clause) + f" {next_day} 0"))
+
+            if cons_working_shifts != 0:
+                if cons_working_shifts >= CS_min:
+                    continue
+                else:
+                    needed_days = CS_min - cons_working_shifts
+                    for i in range(needed_days):
+                        var = get_variable(f"o_{nurse_id}_{i}_{shift_id}")
+                        soft_clauses.append((penalty_weight, f"{var} 0"))
+
+    return soft_clauses
+
+
+def constraint_S3(nurse_history, nurse_name_to_index, nurse_contracts, contracts, penalty_weight=30):
+    soft_clauses = []
+
+    for nurse in nurse_history:
+        nurse_id = nurse_name_to_index[nurse['nurse']]
+        cons_working_days = nurse.get('numberOfConsecutiveDaysOff', 0)
+
+        contract_id = nurse_contracts[nurse_id]
+        contract = contracts[contract_id]
+        CF_max = contract.get('maximumNumberOfConsecutiveDaysOff', 0)
+        CF_min = contract.get('minimumNumberOfConsecutiveDaysOff', 0)
+
+        # CF_max
+        if cons_working_days == 0:
+            for d in range(7 - CF_max):
+                clause = []
+                for j in range(CF_max + 1):
+                    var = get_variable(f"e_{nurse_id}_{d + j}")
+                    clause.append(f"{var}")
+                soft_clauses.append((penalty_weight, " ".join(clause) + " 0"))
+        else:
+            if cons_working_days >= CF_max:
+                cons_working_days = CF_max
+
+            for d in range(6, CF_max - 1, -1):
+                clause = []
+                for j in range(CF_max + 1):
+                    var = get_variable(f"e_{nurse_id}_{d - j}")
+                    clause.append(f"{var}")
+                soft_clauses.append((penalty_weight, " ".join(clause) + " 0"))
+
+            for d in range(CF_max - 1, -1, -1):
+                clause = []
+                if abs(d - CF_max) > cons_working_days:
+                    break
+                for j in range(d + 1):
+                    var = get_variable(f"e_{nurse_id}_{d - j}")
+                    clause.append(f"{var}")
+                soft_clauses.append((penalty_weight, " ".join(clause) + " 0"))
+
+        # CF_min
+        for d in range(7 - CF_min + 1):
+            clause = []
+            today = get_variable(f"e_{nurse_id}_{d}")
+            if d == 0:
+                clause.append(f"{today}")
+            else:
+                yesterday = get_variable(f"e_{nurse_id}_{d - 1}")
+                clause.append(f"{today} -{yesterday}")
+            for j in range(1, CF_min):
+                next_day = get_variable(f"e_{nurse_id}_{d + j}")
+                soft_clauses.append(
+                    (penalty_weight, " ".join(clause) + f" -{next_day} 0"))
+
+        if cons_working_days != 0:
+            if cons_working_days >= CF_min:
+                continue
+            else:
+                needed_days = CF_min - cons_working_days
+                for i in range(needed_days):
+                    var = get_variable(f"e_{nurse_id}_{i}")
+                    soft_clauses.append((penalty_weight, f"-{var} 0"))
 
     return soft_clauses
 # MaxSAT Solver (RC2)
 
 
-def solve_maxsat_RC2_stratified(hard_clauses, soft_clauses, timeout, solver_type='rc2stratified'):
+def solve_maxsat_RC2_stratified(hard_clauses, soft_clauses, timeout=100000, solver_type='rc2stratified'):
     wcnf = WCNF()
 
     # Add hard constraints
@@ -572,47 +619,6 @@ def solve_maxsat_RC2(hard_clauses, soft_clauses):
 
     if solution:
         return [reverse_variable_dict[abs(var)] for var in solution if var > 0]
-    else:
-        return None
-
-
-def solve_maxsat_CP_SAT(hard_clauses, soft_clauses):
-    model = cp_model.CpModel()
-
-    # Dictionary to store variables
-    variables = {}
-    reverse_variable_dict = {}
-
-    # Function to get or create variables
-    def get_variable(lit):
-        if abs(lit) not in variables:
-            variables[abs(lit)] = model.NewBoolVar(f'x_{abs(lit)}')
-            reverse_variable_dict[abs(lit)] = f'x_{abs(lit)}'
-        return variables[abs(lit)] if lit > 0 else variables[abs(lit)].Not()
-
-    # Add hard constraints
-    for clause in hard_clauses:
-        model.AddBoolOr([get_variable(int(lit))
-                        for lit in clause.split() if lit != '0'])
-
-    # Add soft constraints with penalty
-    soft_penalty = []
-    for weight, clause in soft_clauses:
-        soft_var = model.NewBoolVar(f'soft_{len(soft_penalty)}')
-        literals = [get_variable(int(lit))
-                    for lit in clause.split() if lit != '0']
-        model.AddBoolOr(literals + [soft_var])
-        soft_penalty.append(weight * soft_var)
-
-    # Minimize soft constraint violations
-    model.Minimize(sum(soft_penalty))
-
-    # Solve the model
-    solver = cp_model.CpSolver()
-    status = solver.Solve(model)
-
-    if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
-        return [reverse_variable_dict[abs(var)] for var, obj in variables.items() if solver.Value(obj)]
     else:
         return None
 
@@ -725,31 +731,37 @@ if __name__ == "__main__":
 
     hard_clauses = []
     hard_clauses += constraint_H1(N, D, S, SK, nurse_skills)
-    # hard_clauses += constraint_H3(N, D, S, SK,
-    #                               nurse_skills, forbidden_shifts, nurse_history)
-    # hard_clauses += constraint_H2(N, D, S, SK, weekday, nurse_skills)
-    export_cnf(clauses=hard_clauses)
+    hard_clauses += constraint_H3(N, D, S, SK,
+                                  nurse_skills, forbidden_shifts, nurse_history)
+    hard_clauses += constraint_H2(N, D, S, SK, weekday, nurse_skills)
+    # export_cnf(clauses=hard_clauses)
 
     soft_clauses = []
     soft_clauses += constraint_S1(N, D, S, SK,
                                   weekday, nurse_skills, penalty_weight=30)
     soft_clauses += constraint_S5(N, D, S, nurse_skills,
                                   nurse_contracts, contracts, penalty_weight=30)
-    # soft_clauses += old_constraint_S5(N, D, S, nurse_skills,nurse_contracts, contracts, penalty_weight=30)
+    # # soft_clauses += old_constraint_S5(N, D, S, nurse_skills,nurse_contracts, contracts, penalty_weight=30)
     soft_clauses += constraint_S4_SOR(N, D, S, SK, nurse_skills,
                                       shift_off_requests, nurse_name_to_index, penalty_weight=10)
     soft_clauses += constraint_S2_cons_work_day(
         nurse_history, nurse_name_to_index, nurse_contracts, contracts, penalty_weight=30)
+    soft_clauses += constraint_S2_cons_work_shift(
+        nurse_history, nurse_name_to_index, shift_types, penalty_weight=15)
+    soft_clauses += constraint_S3(nurse_history, nurse_name_to_index,
+                                  nurse_contracts, contracts, penalty_weight=30)
     export_cnf(clauses=hard_clauses+soft_clauses)
 
     print(f"Number of hard clauses: {len(hard_clauses)}")
     print(f"Number of soft clauses: {len(soft_clauses)}")
     print(f"Total number of variables: {counter - 1}")
+
+    start_time = time.time()
     # solution = solve_maxsat_RC2(hard_clauses, soft_clauses)
     solution = solve_maxsat_RC2_stratified(
-        hard_clauses, soft_clauses, timeout=args.timeout)
-    # solution = solve_maxsat_CP_SAT(
-    #     hard_clauses, soft_clauses)
+        hard_clauses, soft_clauses, timeout=100000)
+    solving_time = time.time() - start_time
+    print(f"Solving time: {solving_time:.2f} seconds")
     if solution:
         assignments = decode_solution(solution, nurse_name_to_index)
 
@@ -868,22 +880,43 @@ if __name__ == "__main__":
 # --timeout 30
 
 
-# 30n4w
-# 4 weeks
+# n030w4_1_6-7-5-3
 # java -jar Simulator_withTimeout.jar `
-# --his input\n030w4\H0-n030w4-2.json `
+# --his input\n030w4\H0-n030w4-1.json `
 # --sce input\n030w4\Sc-n030w4.json `
-# --weeks input\n030w4\WD-n030w4-8.json input\n030w4\WD-n030w4-1.json input\n030w4\WD-n030w4-4.json input\n030w4\WD-n030w4-3.json `
+# --weeks input\n030w4\WD-n030w4-6.json input\n030w4\WD-n030w4-7.json input\n030w4\WD-n030w4-5.json input\n030w4\WD-n030w4-3.json `
 # --solver "python nurse_rostering_sat.py" `
 # --runDir SC_Encoding/ `
 # --outDir "D:\UET_Materials\UET_6th_Semester(23-24)\NCKH\Nurse Rostering Prob\NRP Solver\Simulator_withTimeout\Simulator_out" `
 # --cus
 
+# n030w4_1_6-2-9-1
+# java -jar Simulator_withTimeout.jar `
+# --his input\n030w4\H0-n030w4-1.json `
+# --sce input\n030w4\Sc-n030w4.json `
+# --weeks input\n030w4\WD-n030w4-6.json input\n030w4\WD-n030w4-2.json input\n030w4\WD-n030w4-9.json input\n030w4\WD-n030w4-1.json `
+# --solver "python nurse_rostering_sat.py" `
+# --runDir SC_Encoding/ `
+# --outDir "D:\UET_Materials\UET_6th_Semester(23-24)\NCKH\Nurse Rostering Prob\NRP Solver\Simulator_withTimeout\Simulator_out" `
+# --cus
+
+# n120w8
 # 8 weeks
 # java -jar Simulator_withTimeout.jar `
-# --his input\n120w8\H0-n120w8-2.json `
+# --his input\n120w8\H0-n120w8-0.json `
 # --sce input\n120w8\Sc-n120w8.json `
-# --weeks input\n120w8\WD-n120w8-4.json input\n120w8\WD-n120w8-5.json input\n120w8\WD-n120w8-6.json input\n120w8\WD-n120w8-7.json input\n120w8\WD-n120w8-3.json input\n120w8\WD-n120w8-1.json input\n120w8\WD-n120w8-2.json input\n120w8\WD-n120w8-1.json `
+# --weeks input\n120w8\WD-n120w8-0.json input\n120w8\WD-n120w8-9.json input\n120w8\WD-n120w8-9.json input\n120w8\WD-n120w8-4.json input\n120w8\WD-n120w8-5.json input\n120w8\WD-n120w8-1.json input\n120w8\WD-n120w8-0.json input\n120w8\WD-n120w8-3.json `
+# --solver "python nurse_rostering_sat.py" `
+# --runDir SC_Encoding/ `
+# --outDir "D:\UET_Materials\UET_6th_Semester(23-24)\NCKH\Nurse Rostering Prob\NRP Solver\Simulator_withTimeout\Simulator_out" `
+# --cus `
+# --timeout 30
+
+# 8 weeks
+# java -jar Simulator_withTimeout.jar `
+# --his input\n120w8\H0-n120w8-1.json `
+# --sce input\n120w8\Sc-n120w8.json `
+# --weeks input\n120w8\WD-n120w8-7.json input\n120w8\WD-n120w8-2.json input\n120w8\WD-n120w8-6.json input\n120w8\WD-n120w8-4.json input\n120w8\WD-n120w8-5.json input\n120w8\WD-n120w8-2.json input\n120w8\WD-n120w8-0.json input\n120w8\WD-n120w8-2.json `
 # --solver "python nurse_rostering_sat.py" `
 # --runDir SC_Encoding/ `
 # --outDir "D:\UET_Materials\UET_6th_Semester(23-24)\NCKH\Nurse Rostering Prob\NRP Solver\Simulator_withTimeout\Simulator_out" `
