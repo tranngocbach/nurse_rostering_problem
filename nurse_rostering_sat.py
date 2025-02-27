@@ -118,6 +118,7 @@ def constraint_H1(N, D, S, SK, nurse_skills):
                 clauses.append(f"-{s1} -{s2} 0")
     return clauses
 
+
 def constraint_H3(N, D, S, SK, nurse_skills, forbidden_shifts, nurse_history):
     clauses = []
     for n in range(N):
@@ -310,7 +311,6 @@ def constraint_S5(N, D, S, nurse_skills, nurse_contracts, contracts, penalty_wei
     return soft_clauses
 
 
-
 # SAT Solver (Glucose)
 # def solve_maxsat(clauses):
     solver = Glucose3()
@@ -405,7 +405,10 @@ def constraint_S2_cons_work_day(nurse_history, nurse_name_to_index, nurse_contra
             clause = []
             today = get_variable(f"e_{nurse_id}_{d}")
             if d == 0:
-                clause.append(f"-{today}")
+                if cons_working_days == 0:
+                    clause.append(f"-{today}")
+                else:
+                    continue
             else:
                 yesterday = get_variable(f"e_{nurse_id}_{d - 1}")
                 clause.append(f"-{today} {yesterday}")
@@ -445,43 +448,46 @@ def constraint_S2_cons_work_shift(nurse_history, nurse_name_to_index, shift_type
                 cons_working_shifts = last_cons_working_shifts
 
             # CS_max
-            if cons_working_shifts == 0:
-                for d in range(7 - CS_max):
-                    clause = []
-                    for j in range(CS_max + 1):
-                        var = get_variable(
-                            f"o_{nurse_id}_{d + j}_{shift_id}")
-                        clause.append(f"-{var}")
-                    soft_clauses.append(
-                        (penalty_weight, " ".join(clause) + " 0"))
-            else:
-                if cons_working_shifts >= CS_max:
-                    cons_working_shifts = CS_max
+            # if cons_working_shifts == 0:
+            #     for d in range(7 - CS_max):
+            #         clause = []
+            #         for j in range(CS_max + 1):
+            #             var = get_variable(
+            #                 f"o_{nurse_id}_{d + j}_{shift_id}")
+            #             clause.append(f"-{var}")
+            #         soft_clauses.append(
+            #             (penalty_weight, " ".join(clause) + " 0"))
+            # else:
+            #     if cons_working_shifts >= CS_max:
+            #         cons_working_shifts = CS_max
 
-                for d in range(6, CS_max - 1, -1):
-                    clause = []
-                    for j in range(CS_max + 1):
-                        var = get_variable(f"o_{nurse_id}_{d - j}_{shift_id}")
-                        clause.append(f"-{var}")
-                    soft_clauses.append(
-                        (penalty_weight, " ".join(clause) + " 0"))
+            #     for d in range(6, CS_max - 1, -1):
+            #         clause = []
+            #         for j in range(CS_max + 1):
+            #             var = get_variable(f"o_{nurse_id}_{d - j}_{shift_id}")
+            #             clause.append(f"-{var}")
+            #         soft_clauses.append(
+            #             (penalty_weight, " ".join(clause) + " 0"))
 
-                for d in range(CS_max - 1, -1, -1):
-                    clause = []
-                    if abs(d - CS_max) > cons_working_shifts:
-                        break
-                    for j in range(d + 1):
-                        var = get_variable(f"o_{nurse_id}_{d - j}_{shift_id}")
-                        clause.append(f"-{var}")
-                    soft_clauses.append(
-                        (penalty_weight, " ".join(clause) + " 0"))
+            #     for d in range(CS_max - 1, -1, -1):
+            #         clause = []
+            #         if abs(d - CS_max) > cons_working_shifts:
+            #             break
+            #         for j in range(d + 1):
+            #             var = get_variable(f"o_{nurse_id}_{d - j}_{shift_id}")
+            #             clause.append(f"-{var}")
+            #         soft_clauses.append(
+            #             (penalty_weight, " ".join(clause) + " 0"))
 
             # CS_min
             for d in range(7 - CS_min + 1):
                 clause = []
                 today = get_variable(f"o_{nurse_id}_{d}_{shift_id}")
                 if d == 0:
-                    clause.append(f"-{today}")
+                    if cons_working_shifts == 0:
+                        clause.append(f"-{today}")
+                    else:
+                        continue
                 else:
                     yesterday = get_variable(
                         f"o_{nurse_id}_{d - 1}_{shift_id}")
@@ -516,39 +522,42 @@ def constraint_S3(nurse_history, nurse_name_to_index, nurse_contracts, contracts
         CF_min = contract.get('minimumNumberOfConsecutiveDaysOff', 0)
 
         # CF_max
-        if cons_working_days == 0:
-            for d in range(7 - CF_max):
-                clause = []
-                for j in range(CF_max + 1):
-                    var = get_variable(f"e_{nurse_id}_{d + j}")
-                    clause.append(f"{var}")
-                soft_clauses.append((penalty_weight, " ".join(clause) + " 0"))
-        else:
-            if cons_working_days >= CF_max:
-                cons_working_days = CF_max
+        # if cons_working_days == 0:
+        #     for d in range(7 - CF_max):
+        #         clause = []
+        #         for j in range(CF_max + 1):
+        #             var = get_variable(f"e_{nurse_id}_{d + j}")
+        #             clause.append(f"{var}")
+        #         soft_clauses.append((penalty_weight, " ".join(clause) + " 0"))
+        # else:
+        #     if cons_working_days >= CF_max:
+        #         cons_working_days = CF_max
 
-            for d in range(6, CF_max - 1, -1):
-                clause = []
-                for j in range(CF_max + 1):
-                    var = get_variable(f"e_{nurse_id}_{d - j}")
-                    clause.append(f"{var}")
-                soft_clauses.append((penalty_weight, " ".join(clause) + " 0"))
+        #     for d in range(6, CF_max - 1, -1):
+        #         clause = []
+        #         for j in range(CF_max + 1):
+        #             var = get_variable(f"e_{nurse_id}_{d - j}")
+        #             clause.append(f"{var}")
+        #         soft_clauses.append((penalty_weight, " ".join(clause) + " 0"))
 
-            for d in range(CF_max - 1, -1, -1):
-                clause = []
-                if abs(d - CF_max) > cons_working_days:
-                    break
-                for j in range(d + 1):
-                    var = get_variable(f"e_{nurse_id}_{d - j}")
-                    clause.append(f"{var}")
-                soft_clauses.append((penalty_weight, " ".join(clause) + " 0"))
+        #     for d in range(CF_max - 1, -1, -1):
+        #         clause = []
+        #         if abs(d - CF_max) > cons_working_days:
+        #             break
+        #         for j in range(d + 1):
+        #             var = get_variable(f"e_{nurse_id}_{d - j}")
+        #             clause.append(f"{var}")
+        #         soft_clauses.append((penalty_weight, " ".join(clause) + " 0"))
 
         # CF_min
         for d in range(7 - CF_min + 1):
             clause = []
             today = get_variable(f"e_{nurse_id}_{d}")
             if d == 0:
-                clause.append(f"{today}")
+                if cons_working_days == 0:
+                    clause.append(f"{today}")
+                else:
+                    continue
             else:
                 yesterday = get_variable(f"e_{nurse_id}_{d - 1}")
                 clause.append(f"{today} -{yesterday}")
@@ -704,6 +713,12 @@ def load_last_sunday_shifts(filename):
     return []
 
 
+def export_variable_mapping(filename="variable_mapping.txt"):
+    with open(filename, "w") as f:
+        for var_id, var_name in reverse_variable_dict.items():
+            f.write(f"{var_id}: {var_name}\n")
+
+
 # python nurse_rostering_sat.py `
 # --sce input/n012w8/Sc-n012w8.json `
 # --his input/n012w8/H0-n012w8-0.json `
@@ -748,10 +763,11 @@ if __name__ == "__main__":
         nurse_history, nurse_name_to_index, nurse_contracts, contracts, penalty_weight=30)
     soft_clauses += constraint_S2_cons_work_shift(
         nurse_history, nurse_name_to_index, shift_types, penalty_weight=15)
+
     soft_clauses += constraint_S3(nurse_history, nurse_name_to_index,
                                   nurse_contracts, contracts, penalty_weight=30)
     export_cnf(clauses=hard_clauses+soft_clauses)
-
+    export_variable_mapping(filename="variable_mapping.txt")
     print(f"Number of hard clauses: {len(hard_clauses)}")
     print(f"Number of soft clauses: {len(soft_clauses)}")
     print(f"Total number of variables: {counter - 1}")
