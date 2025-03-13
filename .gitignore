@@ -1,7 +1,10 @@
 /.vscode
-
 /__pycache__
 
-/input
+/solution
+/output_for_SC
 
-output.cnf
+validator.jar
+sol.txt
+
+formular.wcnf

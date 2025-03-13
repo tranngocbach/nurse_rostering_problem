@@ -180,7 +180,7 @@ def constraint_H3(N, D, S, SK, nurse_skills, forbidden_shifts, nurse_history):
     return clauses
 
 
-def constraint_H1_H3_SC(N, D, S, nurse_skills, forbidden_shifts, nurse_history, weekdays):
+def constraint_H3_SC(N, D, S, nurse_skills, forbidden_shifts, nurse_history, weekdays):
     def encode_window(window, width, very_first_shift, n):
         # First window
         if window == 0:
@@ -300,6 +300,20 @@ def constraint_H1_H3_SC(N, D, S, nurse_skills, forbidden_shifts, nurse_history, 
             hard_clauses.append(f"-{var_R_1} -{var_R_2} 0")
 
     hard_clauses = []
+    width = len(S)
+    isLack = True
+
+    # for n in range(N):
+    #     shifts = [get_variable(f"o_{n}_{d}_{s}")
+    #               for d in range(D) for s in S]
+    #     very_first_shift = shifts[0]
+
+    #     for gw in range(0, len(weekdays) * 7):
+    #         encode_window(gw, width, very_first_shift, width * len(weekdays))
+
+    #     for gw in range(0, len(weekdays) * 7 - 1):
+    #         glue_window(gw, isLack, very_first_shift)
+    hard_clauses = []
     num_of_shifts = len(S)
     isLack = True
 
@@ -313,7 +327,7 @@ def constraint_H1_H3_SC(N, D, S, nurse_skills, forbidden_shifts, nurse_history, 
 
         for gw in range(0, len(weekdays) * 7):
             encode_window(gw, width, very_first_shift,
-                          width * 7 * len(weekdays))
+                          width * len(weekdays))
 
         for gw in range(0, len(weekdays) * 7 - 1):
             glue_window(gw, isLack, very_first_shift)
@@ -336,7 +350,7 @@ def constraint_H1_H3_SC(N, D, S, nurse_skills, forbidden_shifts, nurse_history, 
 def constraint_H2(N, D, S, SK, weekdays, nurse_skills):
     hard_clauses = []
     config = PBConfig()
-    config.set_PB_Encoder(pblib.PB_BDD)
+    config.set_PB_Encoder(pblib.PB_BEST)
     pb2 = Pb2cnf(config)
 
     for d in range(D):
@@ -375,7 +389,7 @@ def constraint_H2(N, D, S, SK, weekdays, nurse_skills):
 def constraint_S1(N, D, S, SK, weekdays, nurse_skills, penalty_weight):
     soft_clauses = []
     config = PBConfig()
-    config.set_PB_Encoder(pblib.PB_BDD)
+    config.set_PB_Encoder(pblib.PB_BEST)
     pb2 = Pb2cnf(config)
 
     for d in range(D):
@@ -383,13 +397,15 @@ def constraint_S1(N, D, S, SK, weekdays, nurse_skills, penalty_weight):
             for sk in SK:
                 Copt = get_Copt(weekdays, d, s, sk)
                 Cmin = get_Cmin(weekdays, d, s, sk)
-                # if Copt - Cmin <= 2:
-                #     continue
-                nurses = [get_variable(f"x_{n}_{d}_{s}_{sk}") for n in range(
-                    N) if sk in nurse_skills.get(n, [])]
+                if Copt - Cmin <= 0:
+                    continue
+                # nurses = [get_variable(f"x_{n}_{d}_{s}_{sk}") for n in range(
+                #     N) if sk in nurse_skills.get(n, [])]
 
                 # Penalize each missing nurse below Copt (soft constraint)
-                if Copt > 0 and len(nurses) >= Copt:
+                if Copt > 0:
+                    nurses = [get_variable(f"x_{n}_{d}_{s}_{sk}") for n in range(
+                        N) if sk in nurse_skills.get(n, [])]
                     formula = []
                     max_var_copt = pb2.encode_at_least_k(
                         nurses, Copt, formula, len(variable_dict) + 1)
@@ -799,7 +815,7 @@ def constraint_total_assignments(nurse_contracts, contract, penalty_weight):
 # MaxSAT Solver (RC2)
 
 
-def solve_maxsat_RC2_stratified(hard_clauses, soft_clauses, timeout=100000, solver_type='rc2stratified'):
+def solve_maxsat_RC2_stratified(hard_clauses, soft_clauses, timeout, solver_type='rc2stratified'):
     wcnf = WCNF()
 
     # Add hard constraints
@@ -824,10 +840,15 @@ def solve_maxsat_RC2_stratified(hard_clauses, soft_clauses, timeout=100000, solv
     with concurrent.futures.ThreadPoolExecutor() as executor:
         future = executor.submit(solve)
         try:
+            print("Waiting for the solver to complete...")
             solution = future.result(timeout=timeout)  # Set timeout
+            print("Solver completed.")
             return [reverse_variable_dict[abs(var)] for var in solution if var > 0] if solution else None
         except concurrent.futures.TimeoutError:
             print("MaxSAT solving timed out!")
+            return None
+        except Exception as e:
+            print(f"An error occurred: {e}")
             return None
 
 
@@ -915,6 +936,8 @@ def print_variable_counts():
         1 for var in variable_dict if var.startswith('aux_max_assign'))
     aux_cwmax_count = sum(
         1 for var in variable_dict if var.startswith('aux_cwmax'))
+    auxvarsc_count = sum(
+        1 for var in variable_dict if var.startswith('auxvarsc'))
 
     print(f"Number of x variables: {x_count}")
     print(f"Number of o variables: {o_count}")
@@ -925,6 +948,7 @@ def print_variable_counts():
     print(f"Number of aux_max_assign variables: {aux_max_assign_count}")
     print(f"Number of aux_min_assign variables: {aux_min_assign_count}")
     print(f"Number of aux_cwmax variables: {aux_cwmax_count}")
+    print(f"Number of auxvarsc variables: {auxvarsc_count}")
 
 
 def read_solution_file(file_path):
@@ -948,16 +972,17 @@ if __name__ == "__main__":
     scenario, history, weekdays, N, D, S, SK, W, nurse_skills, forbidden_shifts, nurse_name_to_index, nurse_contracts, contracts, nurse_history, shift_types = load_data(
         args.sce, args.his, args.weeks)
 
-    # hard_clauses += constraint_H1(N, D, S, nurse_skills)
-    # hard_clauses += constraint_H3(N, D, S, SK,
-    #                               nurse_skills, forbidden_shifts, nurse_history)
-    hard_clauses += constraint_H1_H3_SC(N, D, S, nurse_skills,
-                                        forbidden_shifts, nurse_history, weekdays)
+    hard_clauses += constraint_H1(N, D, S, nurse_skills)
+    hard_clauses += constraint_H3(N, D, S, SK,
+                                  nurse_skills, forbidden_shifts, nurse_history)
+    # hard_clauses += constraint_H3_SC(N, D, S, nurse_skills,
+    #                                  forbidden_shifts, nurse_history, weekdays)
     hard_clauses += constraint_H2(N, D, S, SK, weekdays, nurse_skills)
 
     soft_clauses = []
-    # soft_clauses += constraint_S1(N, D, S, SK,
-    #                               weekdays, nurse_skills, penalty_weight=30)
+
+    soft_clauses += constraint_S1(N, D, S, SK,
+                        weekdays, nurse_skills, penalty_weight=10)
     soft_clauses += constraint_S5(N, D, nurse_contracts,
                                   contracts, penalty_weight=30)
     soft_clauses += constraint_S4_SOR(weekdays, nurse_skills,
@@ -985,16 +1010,16 @@ if __name__ == "__main__":
     start_time = time.time()
     # random.shuffle(hard_clauses)
     # random.shuffle(soft_clauses)
-    export_cnf(filename="output.cnf", hard_clauses=hard_clauses,
+    export_cnf(filename="formular.wcnf", hard_clauses=hard_clauses,
                soft_clauses=soft_clauses, weight_hard=60)
 
     # solution = solve_maxsat_RC2(hard_clauses, soft_clauses)
-    solution = solve_maxsat_RC2_stratified(
-        hard_clauses, soft_clauses, timeout=3000)
-    solving_time = time.time() - start_time
-    print(f"Solving time: {solving_time:.2f} seconds")
-    # sol = read_solution_file("sol.txt")
-    # solution = [reverse_variable_dict[abs(var)] for var in sol if var > 0]
+    # solution = solve_maxsat_RC2_stratified(
+    #     hard_clauses, soft_clauses, timeout=10000)
+    # solving_time = time.time() - start_time
+    # print(f"Solving time: {solving_time:.2f} seconds")
+    sol = read_solution_file("sol.txt")
+    solution = [reverse_variable_dict[abs(var)] for var in sol if var > 0]
     if solution:
         # Extract scenario ID from the scenario file
         scenario_id = scenario['id']
