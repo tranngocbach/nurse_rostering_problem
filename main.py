@@ -1,171 +1,47 @@
-from pysat.solvers import Glucose3
-from math import ceil
+import subprocess
+import os
 
+# Định nghĩa đường dẫn file chứa các lệnh
+input_file = r"D:\NRP\SC_Encoding\command.txt"
+output_folder = r"D:\NRP\SC_Encoding\output_for_SC"
+# output_folder = r"D:\NRP\SC_Encoding\output_for_Binomial"
 
-class LadderEncoder:
-    def __init__(self, n, width):
-        self.n = n
-        self.width = width
-        self.clauses = []
-        self.aux_vars = {}
-        self.var_counter = n
+# Đảm bảo thư mục output tồn tại
+os.makedirs(output_folder, exist_ok=True)
 
-    def get_new_var(self):
-        self.var_counter += 1
-        return self.var_counter
+# Đọc file đầu vào
+with open(input_file, "r", encoding="utf-8") as file:
+    lines = file.readlines()
 
-    def get_aux_var(self, first, last):
-        pair = (first, last)
+i = 0
+while i < len(lines):
+    name = lines[i].strip()  # Lấy tên file từ dòng đầu tiên
+    i += 1  # Chuyển sang dòng lệnh
+    if i >= len(lines):
+        break
 
-        if pair in self.aux_vars:
-            return self.aux_vars[pair]
+    command = lines[i].strip()  # Lấy lệnh Python
+    i += 2  # Chuyển sang nhóm lệnh tiếp theo
 
-        if first == last:
-            return first
+    # Đảm bảo tên file hợp lệ (loại bỏ ký tự không hợp lệ)
+    safe_name = name.replace(" ", "_").replace(
+        ":", "").replace('"', "").replace("'", "")
 
-        new_aux_var = self.get_new_var()
-        self.aux_vars[pair] = new_aux_var
-        return new_aux_var
+    # Tạo đường dẫn file đầu ra
+    output_file = os.path.join(output_folder, f"{safe_name}.txt")
 
-    def encode_window(self, window):
-        clauses = []
+    print(f"Đang chạy: {command}")
 
-        # First window
-        if window == 0:
-            lastVar = window * self.width + self.width
+    # Thực thi lệnh và ghi kết quả vào file
+    try:
+        result = subprocess.run(command, shell=True,
+                                capture_output=True, text=True)
+        with open(output_file, "w", encoding="utf-8") as f:
+            f.write(result.stdout)  # Ghi output của chương trình
+            f.write("\n--- ERROR OUTPUT ---\n")
+            f.write(result.stderr)  # Ghi lỗi (nếu có)
+    except Exception as e:
+        with open(output_file, "w", encoding="utf-8") as f:
+            f.write(f"Lỗi khi chạy lệnh: {e}")
 
-            for i in range(self.width - 1, 0, -1):
-                var = window * self.width + i
-                clauses.append([-var, self.get_aux_var(var, lastVar)])
-
-            for i in range(self.width, 1, -1):
-                var = window * self.width + i
-                clauses.append([-self.get_aux_var(var, lastVar),
-                                self.get_aux_var(var - 1, lastVar)])
-
-            for i in range(1, self.width, 1):
-                var = window * self.width + i
-                main = self.get_aux_var(var, lastVar)
-                sub = self.get_aux_var(var + 1, lastVar)
-                clauses.append([var, sub, -main])
-
-            for i in range(1, self.width, 1):
-                var = window * self.width + i
-                clauses.append([-var, -self.get_aux_var(var + 1, lastVar)])
-
-        # Last window
-        elif window == ceil(float(self.n) / self.width) - 1:
-            firstVar = window * self.width + 1
-
-            for i in range(2, self.width + 1, 1):
-                reverse_var = window * self.width + i
-                clauses.append(
-                    [-reverse_var, self.get_aux_var(firstVar, reverse_var)])
-
-            for i in range(self.width - 1, 0, -1):
-                reverse_var = window * self.width + self.width - i
-                clauses.append([-self.get_aux_var(firstVar, reverse_var),
-                                self.get_aux_var(firstVar, reverse_var + 1)])
-
-            for i in range(0, self.width - 1, 1):
-                var = window * self.width + self.width - i
-                main = self.get_aux_var(firstVar, var)
-                sub = self.get_aux_var(firstVar, var - 1)
-                clauses.append([sub, var, -main])
-
-            for i in range(self.width, 1, -1):
-                reverse_var = window * self.width + i
-                clauses.append(
-                    [-reverse_var, -self.get_aux_var(firstVar, reverse_var - 1)])
-        else:
-            # Middle windows
-            # Upper part
-            firstVar = window * self.width + 1
-
-            for i in range(2, self.width + 1, 1):
-                reverse_var = window * self.width + i
-                clauses.append(
-                    [-reverse_var, self.get_aux_var(firstVar, reverse_var)])
-
-            for i in range(self.width - 1, 0, -1):
-                reverse_var = window * self.width + self.width - i
-                clauses.append([-self.get_aux_var(firstVar, reverse_var),
-                                self.get_aux_var(firstVar, reverse_var + 1)])
-
-            for i in range(0, self.width - 1, 1):
-                var = window * self.width + self.width - i
-                main = self.get_aux_var(firstVar, var)
-                sub = self.get_aux_var(firstVar, var - 1)
-                clauses.append([sub, var, -main])
-
-            for i in range(self.width, 1, -1):
-                reverse_var = window * self.width + i
-                clauses.append(
-                    [-reverse_var, -self.get_aux_var(firstVar, reverse_var - 1)])
-
-            # Lower part
-            lastVar = window * self.width + self.width
-
-            for i in range(self.width - 1, 0, -1):
-                var = window * self.width + i
-                clauses.append([-var, self.get_aux_var(var, lastVar)])
-
-            for i in range(self.width, 1, -1):
-                var = window * self.width + i
-                clauses.append([-self.get_aux_var(var, lastVar),
-                                self.get_aux_var(var - 1, lastVar)])
-
-            for i in range(1, self.width, 1):
-                var = window * self.width + i
-                main = self.get_aux_var(var, lastVar)
-                sub = self.get_aux_var(var + 1, lastVar)
-                clauses.append([var, sub, -main])
-
-            # AMZ
-            # for i in range(1, width - 1, 1):
-            #     var = window * width + i
-            #     clauses.append([-var, get_aux_var(var + 1, lastVar)])
-        return clauses
-
-    def glue_window(self, window, isLack):
-        clause = []
-        for i in range(1, self.width, 1):
-            if isLack and i == 1:
-                continue
-            first_reverse_var = (window + 1) * self.width + 1
-            last_var = window * self.width + self.width
-            reverse_var = (window + 1) * self.width + i
-            var = window * self.width + i + 1
-
-            print("i: ", i, "var: ", var, "last_var: ", last_var, "reverse_var: ",
-                  reverse_var, "first_reverse_var: ", first_reverse_var)
-
-            clause.append([
-                -self.get_aux_var(var, last_var),
-                -self.get_aux_var(first_reverse_var, reverse_var)
-            ])
-        return clause
-
-    def generate_clauses(self, isLack):
-        clauses = []
-        for gw in range(0, ceil(float(self.n) / self.width)):
-            clauses.extend(self.encode_window(gw))
-
-        for gw in range(0, ceil(float(self.n) / self.width) - 1):
-            clauses.extend(self.glue_window(gw, isLack))
-
-        return clauses
-
-    def solve(self, isLack):
-        clauses = self.generate_clauses(isLack)
-        solver = Glucose3()
-
-        for clause in clauses:
-            solver.add_clause(clause)
-
-        # print( solver.solve())
-        print(clauses)
-
-
-encoder = LadderEncoder(16, 4)
-encoder.solve(1)
+print("Hoàn thành!")
