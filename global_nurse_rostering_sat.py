@@ -147,6 +147,13 @@ def constraint_H1(N, D, S, nurse_skills):
 
             for (s1, s2) in combinations(shifts, 2):
                 clauses.append(f"-{s1} -{s2} 0")
+    # for n in range(N):
+    #     for d in range(D):
+    #         shifts = [get_variable(f"o_{n}_{d}_{s}")
+    #                   for s in S]
+
+    #         for (s1, s2) in combinations(shifts, 2):
+    #             clauses.append(f"-{s1} -{s2} 0")
     return clauses
 
 
@@ -452,6 +459,9 @@ def constraint_S4_SOR(weekdays, nurse_skills, nurse_name_to_index, penalty_weigh
                     var = get_variable(
                         f"x_{nurse_index}_{day_index}_{shift_type}_{sk}")
                     soft_clauses.append((penalty_weight, f"-{var} 0"))
+                # var = get_variable(
+                #     f"o_{nurse_index}_{day_index}_{shift_type}")
+                # soft_clauses.append((penalty_weight, f"-{var} 0"))
 
     return soft_clauses
 
@@ -889,7 +899,8 @@ def run_open_wbo(wcnf_path, timeout, output_file):
             if "s SATISFIABLE" in output or "s OPTIMUM" in output:
                 # Chỉ lấy các số sau chữ 'v' trong dòng có 'v'
                 solution = [reverse_variable_dict[abs(int(lit))]
-                            for line in output.splitlines() if line.startswith('v')  # Lọc ra dòng có chữ 'v'
+                            # Lọc ra dòng có chữ 'v'
+                            for line in output.splitlines() if line.startswith('v')
                             for lit in line.split()[1:]]  # Lấy các số sau chữ 'v'
                 return solution
             elif "s UNSATISFIABLE" in output:
