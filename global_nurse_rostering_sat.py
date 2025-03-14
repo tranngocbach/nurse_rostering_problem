@@ -981,8 +981,8 @@ if __name__ == "__main__":
 
     soft_clauses = []
 
-    soft_clauses += constraint_S1(N, D, S, SK,
-                        weekdays, nurse_skills, penalty_weight=10)
+    # soft_clauses += constraint_S1(N, D, S, SK,
+    #                     weekdays, nurse_skills, penalty_weight=10)
     soft_clauses += constraint_S5(N, D, nurse_contracts,
                                   contracts, penalty_weight=30)
     soft_clauses += constraint_S4_SOR(weekdays, nurse_skills,
@@ -999,7 +999,10 @@ if __name__ == "__main__":
     soft_clauses += constraint_total_assignments(
         nurse_contracts, contracts, penalty_weight=20)
 
+    if not os.path.exists(args.sol):
+        os.makedirs(args.sol)
     export_variable_mapping(filename="solution/variable_mapping.txt")
+
     print(f"Number of hard clauses: {len(hard_clauses)}")
     print(f"Number of soft clauses: {len(soft_clauses)}")
     print(f"Total number of variables: {counter - 1}")
@@ -1014,12 +1017,12 @@ if __name__ == "__main__":
                soft_clauses=soft_clauses, weight_hard=60)
 
     # solution = solve_maxsat_RC2(hard_clauses, soft_clauses)
-    # solution = solve_maxsat_RC2_stratified(
-    #     hard_clauses, soft_clauses, timeout=10000)
+    solution = solve_maxsat_RC2_stratified(
+        hard_clauses, soft_clauses, timeout=10000)
     # solving_time = time.time() - start_time
     # print(f"Solving time: {solving_time:.2f} seconds")
-    sol = read_solution_file("sol.txt")
-    solution = [reverse_variable_dict[abs(var)] for var in sol if var > 0]
+    # sol = read_solution_file("sol.txt")
+    # solution = [reverse_variable_dict[abs(var)] for var in sol if var > 0]
     if solution:
         # Extract scenario ID from the scenario file
         scenario_id = scenario['id']
@@ -1052,9 +1055,3 @@ if __name__ == "__main__":
         subprocess.run(validator_command, shell=True)
     else:
         print("No solutions.")
-
-# python global_nurse_rostering_sat.py `
-# --sce "D:\NRP\input\n005w4\Sc-n005w4.json" `
-# --his "D:\NRP\input\n005w4\H0-n005w4-0.json" `
-# --weeks "D:\NRP\input/n005w4/WD-n005w4-1.json" "D:\NRP\input/n005w4/WD-n005w4-2.json" "D:\NRP\input/n005w4/WD-n005w4-3.json" "D:\NRP\input/n005w4/WD-n005w4-3.json" `
-# --sol "solution"
