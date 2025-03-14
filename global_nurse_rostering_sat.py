@@ -873,6 +873,39 @@ def solve_maxsat_RC2(hard_clauses, soft_clauses):
         return None
 
 
+def run_open_wbo(wcnf_path, timeout, output_file):
+    try:
+        cmd = ["./open-wbo", wcnf_path, f"-cpu-lim={timeout}"]
+
+        result = subprocess.run(cmd, capture_output=True, text=True)
+
+        with open(output_file, 'w') as f:
+            f.write(result.stdout)
+            if result.stderr:
+                f.write(result.stderr)
+
+        if result.returncode == 0 or result.returncode == 30:
+            output = result.stdout
+            if "s SATISFIABLE" in output or "s OPTIMUM" in output:
+                # Chỉ lấy các số sau chữ 'v' trong dòng có 'v'
+                solution = [reverse_variable_dict[abs(int(lit))]
+                            for line in output.splitlines() if line.startswith('v')  # Lọc ra dòng có chữ 'v'
+                            for lit in line.split()[1:]]  # Lấy các số sau chữ 'v'
+                return solution
+            elif "s UNSATISFIABLE" in output:
+                print("The problem is unsatisfiable.")
+                return None
+            else:
+                print("No valid solution found in the output.")
+                return None
+        else:
+            print(f"Error running Open-WBO: {result.stderr}")
+            return None
+    except Exception as e:
+        print(f"An error occurred while running Open-WBO: {e}")
+        return None
+
+
 def decode_solution(solution, nurse_name_to_index, start_day, end_day):
     assignments = []
     index_to_nurse_name = {v: k for k, v in nurse_name_to_index.items()}
@@ -982,7 +1015,7 @@ if __name__ == "__main__":
     soft_clauses = []
 
     # soft_clauses += constraint_S1(N, D, S, SK,
-    #                     weekdays, nurse_skills, penalty_weight=10)
+    #                               weekdays, nurse_skills, penalty_weight=30)
     soft_clauses += constraint_S5(N, D, nurse_contracts,
                                   contracts, penalty_weight=30)
     soft_clauses += constraint_S4_SOR(weekdays, nurse_skills,
@@ -1019,8 +1052,9 @@ if __name__ == "__main__":
     # solution = solve_maxsat_RC2(hard_clauses, soft_clauses)
     solution = solve_maxsat_RC2_stratified(
         hard_clauses, soft_clauses, timeout=10000)
-    # solving_time = time.time() - start_time
-    # print(f"Solving time: {solving_time:.2f} seconds")
+    # solution = run_open_wbo("formular.wcnf", 8, "log.txt")
+    solving_time = time.time() - start_time
+    print(f"Solving time: {solving_time:.2f} seconds")
     # sol = read_solution_file("sol.txt")
     # solution = [reverse_variable_dict[abs(var)] for var in sol if var > 0]
     if solution:
