@@ -1,39 +1,47 @@
 import subprocess
 import os
 
-# Định nghĩa đường dẫn file shell script
-sh_file = "run_instances.sh"  # Đường dẫn file shell script
-output_folder = "output_for_binomial"  # Thư mục lưu kết quả
+# Định nghĩa đường dẫn file chứa các lệnh
+input_file = "run_instances.sh"  # Đường dẫn file shell script
+output_folder = "output_for_binomial"
+# output_folder = r"D:\NRP\SC_Encoding\output_for_Binomial"
 
 # Đảm bảo thư mục output tồn tại
 os.makedirs(output_folder, exist_ok=True)
 
-# Đọc và thực thi file shell script, lấy tên scenario từ echo
-try:
-    result = subprocess.run(
-        f"bash {sh_file}", shell=True, capture_output=True, text=True)
+# Đọc file đầu vào
+with open(input_file, "r", encoding="utf-8") as file:
+    lines = file.readlines()
 
-    # Tìm tên scenario từ output của bash (từ dòng echo "Running scenario: ...")
-    scenario_name = None
-    for line in result.stdout.splitlines():
-        if line.startswith("Running scenario:"):
-            scenario_name = line.split(":")[1].strip()
-            break
+i = 0
+while i < len(lines):
+    name = lines[i].strip()  # Lấy tên file từ dòng đầu tiên
+    i += 1  # Chuyển sang dòng lệnh
+    if i >= len(lines):
+        break
 
-    # Nếu tìm thấy tên scenario, tạo file với tên đó
-    if scenario_name:
-        output_file = os.path.join(output_folder, f"{scenario_name}.txt")
-        print(f"Đang lưu kết quả vào: {output_file}")
+    command = lines[i].strip()  # Lấy lệnh Python
+    i += 2  # Chuyển sang nhóm lệnh tiếp theo
 
-        # Ghi kết quả đầu ra vào file
+    # Đảm bảo tên file hợp lệ (loại bỏ ký tự không hợp lệ)
+    safe_name = name.replace(" ", "_").replace(
+        ":", "").replace('"', "").replace("'", "")
+
+    # Tạo đường dẫn file đầu ra
+    output_file = os.path.join(output_folder, f"{safe_name}.txt")
+
+    print(f"Đang chạy: {command}")
+
+    # Thực thi lệnh và ghi kết quả vào file
+    try:
+        result = subprocess.run(command, shell=True,
+                                capture_output=True, text=True)
         with open(output_file, "w", encoding="utf-8") as f:
             f.write(result.stdout)  # Ghi output của chương trình
             f.write("\n--- ERROR OUTPUT ---\n")
             f.write(result.stderr)  # Ghi lỗi (nếu có)
-    else:
-        print("Không tìm thấy tên scenario trong output")
-
-except Exception as e:
-    print(f"Lỗi khi chạy script: {e}")
+    except Exception as e:
+        with open(output_file, "w", encoding="utf-8") as f:
+            f.write(f"Lỗi khi chạy lệnh: {e}")
 
 print("Hoàn thành!")
