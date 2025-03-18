@@ -3,8 +3,9 @@ import os
 
 # Định nghĩa đường dẫn file chứa các lệnh
 input_file = "run_instances.sh"  # Đường dẫn file shell script
-output_folder = "output_for_binomial"
+# output_folder = "output_for_binomial"
 # output_folder = r"D:\NRP\SC_Encoding\output_for_Binomial"
+output_folder = "output_for_SC"
 
 # Đảm bảo thư mục output tồn tại
 os.makedirs(output_folder, exist_ok=True)

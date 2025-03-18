@@ -3,11 +3,15 @@
 
 /input
 /solution
+/old_solution_for_binomial
+/old_output_for_binomial
+/new_solution_for_binomial
+/new_output_for_binomial
 /output_for_SC
 
 validator.jar
 sol.txt
-
+log.txt
 
 formular.wcnf
 
