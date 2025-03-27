@@ -1,11 +1,14 @@
+from extract_to_xlsx import extract_to_xlsx
 import subprocess
 import os
 
 # Định nghĩa đường dẫn file chứa các lệnh
 input_file = "run_instances.sh"  # Đường dẫn file shell script
-# output_folder = "output_for_binomial"
+# output_folder = "new_output_for_binomial"
 # output_folder = r"D:\NRP\SC_Encoding\output_for_Binomial"
-output_folder = "output_for_SC"
+# output_folder = "output_for_SC"
+# output_folder = "output_for_SC_2"
+output_folder = "binomial"
 
 # Đảm bảo thư mục output tồn tại
 os.makedirs(output_folder, exist_ok=True)
@@ -45,4 +48,5 @@ while i < len(lines):
         with open(output_file, "w", encoding="utf-8") as f:
             f.write(f"Lỗi khi chạy lệnh: {e}")
 
+# extract_to_xlsx(output_folder=output_folder)
 print("Hoàn thành!")

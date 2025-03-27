@@ -230,10 +230,13 @@ def constraint_H3(N, D, S, SK, nurse_skills, forbidden_shifts, nurse_history):
                 for forbidden_shift in forbidden_shifts:
                     if forbidden_shift['precedingShiftType'] == last_shift_type:
                         for s2 in forbidden_shift['succeedingShiftTypes']:
-                            for sk in nurse_skills.get(nurse_id, []):
-                                var2 = get_variable(
-                                    f"x_{nurse_id}_0_{s2}_{sk}")
-                                clauses.append(f"-{var2} 0")
+                            # for sk in nurse_skills.get(nurse_id, []):
+                            #     var2 = get_variable(
+                            #         f"x_{nurse_id}_0_{s2}_{sk}")
+                            #     hard_clauses.append(f"-{var2} 0")
+                            var2 = get_variable(
+                                f"o_{nurse_id}_0_{s2}")
+                            hard_clauses.append(f"-{var2} 0")
 
     return clauses
 
@@ -344,8 +347,8 @@ def constraint_H3_SC(N, D, S, nurse_skills, forbidden_shifts, nurse_history, wee
     def glue_window(window, isLack, very_first_shift):
         for i in range(1, width, 1):
             if isLack:
-                # if width == 8 and (i == 1 or i == 2 or i == 3 or i == 5 or i == 7):
-                #     continue
+                if width == 8 and (i == 1 or i == 2 or i == 3 or i == 5 or i == 7):
+                    continue
                 if width == 4 and i == 1:
                     continue
             first_reverse_var = (window + 1) * width + 1 + very_first_shift - 1
@@ -388,7 +391,7 @@ def constraint_H3_SC(N, D, S, nurse_skills, forbidden_shifts, nurse_history, wee
 
     #     for gw in range(0, len(weekdays) * 7):
     #         encode_window(gw, width, very_first_shift,
-    #                       width * len(weekdays))
+    #                       width * len(weekdays) * 7)
 
     #     for gw in range(0, len(weekdays) * 7 - 1):
     #         glue_window(gw, isLack, very_first_shift)
@@ -401,17 +404,20 @@ def constraint_H3_SC(N, D, S, nurse_skills, forbidden_shifts, nurse_history, wee
                 for forbidden_shift in forbidden_shifts:
                     if forbidden_shift['precedingShiftType'] == last_shift_type:
                         for s2 in forbidden_shift['succeedingShiftTypes']:
-                            for sk in nurse_skills.get(nurse_id, []):
-                                var2 = get_variable(
-                                    f"x_{nurse_id}_0_{s2}_{sk}")
-                                hard_clauses.append(f"-{var2} 0")
+                            #     for sk in nurse_skills.get(nurse_id, []):
+                            #         var2 = get_variable(
+                            #             f"x_{nurse_id}_0_{s2}_{sk}")
+                            #         hard_clauses.append(f"-{var2} 0")
+                            var2 = get_variable(
+                                f"o_{nurse_id}_0_{s2}")
+                            hard_clauses.append(f"-{var2} 0")
     return hard_clauses
 
 
 def constraint_H2(N, D, S, SK, weekdays, nurse_skills):
     hard_clauses = []
     config = PBConfig()
-    config.set_PB_Encoder(pblib.PB_BEST)
+    config.set_PB_Encoder(pblib.PB_BDD)
     pb2 = Pb2cnf(config)
 
     for d in range(D):
@@ -419,12 +425,12 @@ def constraint_H2(N, D, S, SK, weekdays, nurse_skills):
             for sk in SK:
                 Cmin = get_Cmin(weekdays, d, s, sk)
                 Copt = get_Copt(weekdays, d, s, sk)
-                # if Copt - Cmin <= 2:
-                #     Cmin = Copt
                 nurses = [get_variable(f"x_{n}_{d}_{s}_{sk}") for n in range(
                     N) if sk in nurse_skills.get(n, [])]
 
                 # Ensure at least Cmin nurses are assigned (hard constraint)
+                # if Copt - Cmin <= 2:
+                #     Cmin = Copt
                 if Cmin > 0 and len(nurses) >= Cmin:
                     formula = []
                     global max_var_cmin
@@ -454,8 +460,6 @@ def constraint_optilog_H2(N, D, S, SK, weekdays, nurse_skills):
             for sk in SK:
                 Cmin = get_Cmin(weekdays, d, s, sk)
                 Copt = get_Copt(weekdays, d, s, sk)
-                # if Copt - Cmin <= 2:
-                #     Cmin = Copt
                 nurses = [get_variable(f"x_{n}_{d}_{s}_{sk}") for n in range(
                     N) if sk in nurse_skills.get(n, [])]
 
@@ -549,7 +553,7 @@ def constraint_optilog_S1(N, D, S, SK, weekdays, nurse_skills, penalty_weight):
 # S4. Preferences(10)
 
 
-def constraint_S4_SOR(weekdays, nurse_skills, nurse_name_to_index, penalty_weight):
+def constraint_S4_SOR(weekdays, nurse_name_to_index, penalty_weight):
     soft_clauses = []
     day_mapping = {0: 'Monday', 1: 'Tuesday', 2: 'Wednesday',
                    3: 'Thursday', 4: 'Friday', 5: 'Saturday', 6: 'Sunday'}
@@ -614,8 +618,6 @@ def constraint_S5(N, D, nurse_contracts, contracts, penalty_weight):
                     soft_clauses.append((penalty_weight, f"{w1} -{w2} 0"))
 
     return soft_clauses
-
-
 
 
 def constraint_S2_cons_work_day(weekdays, nurse_history, nurse_name_to_index, nurse_contracts, contracts, penalty_weight):
@@ -1202,15 +1204,15 @@ if __name__ == "__main__":
     scenario, history, weekdays, N, D, S, SK, W, nurse_skills, forbidden_shifts, nurse_name_to_index, nurse_contracts, contracts, nurse_history, shift_types = load_data(
         args.sce, args.his, args.weeks)
 
-    hard_clauses += constraint_H3_SC(N, D, S, nurse_skills,
-                                     forbidden_shifts, nurse_history, weekdays)
+    # hard_clauses += constraint_H3_SC(N, D, S, nurse_skills,
+    #                                  forbidden_shifts, nurse_history, weekdays)
 
-    # hard_clauses_H1 = constraint_H1(N, D, S, nurse_skills)
-    # hard_clauses += hard_clauses_H1
-    # print(f"Number of clauses for H1: {len(hard_clauses_H1)}")
+    hard_clauses_H1 = constraint_H1(N, D, S, nurse_skills)
+    hard_clauses += hard_clauses_H1
+    print(f"Number of clauses for H1: {len(hard_clauses_H1)}")
 
-    # hard_clauses += constraint_H3(N, D, S, SK,
-    #                               nurse_skills, forbidden_shifts, nurse_history)
+    hard_clauses += constraint_H3(N, D, S, SK,
+                                  nurse_skills, forbidden_shifts, nurse_history)
 
     hard_clauses_aux = constraint_aux(N, D, S, nurse_skills)
     hard_clauses += hard_clauses_aux
@@ -1227,7 +1229,7 @@ if __name__ == "__main__":
     soft_clauses = []
 
     soft_clauses_S1 = constraint_S1(
-        N, D, S, SK, weekdays, nurse_skills, penalty_weight=30)
+        N, D, S, SK, weekdays, nurse_skills, penalty_weight=10)
     soft_clauses += soft_clauses_S1
     print(f"Number of soft clauses for S1: {len(soft_clauses_S1)}")
 
@@ -1240,8 +1242,8 @@ if __name__ == "__main__":
     soft_clauses += soft_clauses_S5
     print(f"Number of soft clauses for S5: {len(soft_clauses_S5)}")
 
-    soft_clauses_S4_SOR = constraint_S4_SOR(weekdays, nurse_skills,
-                                            nurse_name_to_index, penalty_weight=10)
+    soft_clauses_S4_SOR = constraint_S4_SOR(
+        weekdays, nurse_name_to_index, penalty_weight=10)
     soft_clauses += soft_clauses_S4_SOR
     print(f"Number of soft clauses for S4_SOR: {len(soft_clauses_S4_SOR)}")
 
@@ -1296,8 +1298,8 @@ if __name__ == "__main__":
     print(f"Number of soft clauses: {len(soft_clauses)}")
     print(f"Total number of variables: {counter - 1}")
 
-    # Print variable counts
     print_variable_counts()
+    # print(f"Timeout: {W * (10 + 30 * (N - 20))}")
 
     # start_time = time.time()
     # random.shuffle(hard_clauses)
@@ -1309,7 +1311,7 @@ if __name__ == "__main__":
     # solution = solve_maxsat_RC2_stratified(
     #     hard_clauses, soft_clauses, timeout=10000)
     solution = run_open_wbo(
-        f"{args.sol}/formular.wcnf", 10, f"{args.sol}/log.txt")
+        f"{args.sol}/formular.wcnf", args.timeout, f"{args.sol}/log.txt")
     # solution = run_open_wbo(f"{args.sol}/formular.wcnf", W * (10 + 30 * (N - 20)), f"{args.sol}/log.txt")
     # solving_time = time.time() - start_time
     # print(f"Solving time: {solving_time:.2f} seconds")
