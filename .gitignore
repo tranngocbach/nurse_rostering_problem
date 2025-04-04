@@ -1,19 +1,25 @@
 /.vscode
 /__pycache__
 
+#Input, Output
 /input
 /solution
-/old_solution_for_binomial
-/old_output_for_binomial
-/new_solution_for_binomial
-/new_output_for_binomial
+/output_binomial_new_bdd_tt_open_wbo
+/solution_binomial_new_bdd_tt_open_wbo
 /output_for_SC
+/solution_for_SC
 
+#Tool
 validator.jar
+
+#Debug
 sol.txt
 log.txt
 
-formular.wcnf
 
+#Solver
 open-wbo
+tt-open-wbo-inc-Glucose4_1_static
 
+#Statistic
+/statistic

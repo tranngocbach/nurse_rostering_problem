@@ -8,7 +8,7 @@ input_file = "run_instances.sh"  # Đường dẫn file shell script
 # output_folder = r"D:\NRP\SC_Encoding\output_for_Binomial"
 # output_folder = "output_for_SC"
 # output_folder = "output_for_SC_2"
-output_folder = "binomial"
+output_folder = "binomial_bdd_tt_open_wbo"
 
 # Đảm bảo thư mục output tồn tại
 os.makedirs(output_folder, exist_ok=True)
