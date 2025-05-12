@@ -4,20 +4,13 @@ import os
 
 # Định nghĩa đường dẫn file chứa các lệnh
 input_file = "run_instances.sh"  # Đường dẫn file shell script
-# output_folder = "output_binomial_pypblib_tt_open_wbo"
-# output_folder = "output_binomial_new_pypblib(bdd)_tt_open_wbo(removeH2)"
-# output_folder = "output_binomial_old_pypblib_open_wbo"
-# output_folder = "output_binomial_new_pypblib_open_wbo"
-# output_folder = "output_binomial_new_optilog_tt_open_wbo"
-# output_folder = "output_binomial_pypblib(card)_tt_open_wbo"
-# output_folder = "output_binomial_pypblib(amk_best)_tt_open_wbo"
-output_folder = "output_binomial_pypblib(pb_best)_tt_open_wbo"
+# output_folder = "output_binomial_optilog(best)_tt_open_wbo_intel"
+# output_folder = "output_sc_optilog(best)_tt_open_wbo_intel"
 
+# output_folder = "output_binomial_new_optilog(best)_tt_open_wbo_intel"
+# output_folder = "output_sc_new_optilog(best)_tt_open_wbo_intel"
 
-# output_folder = "output_sc_new_pypblib_tt_open_wbo"
-# output_folder = "output_sc_new_optilog_tt_open_wbo"
-# output_folder = "output_sc_new_optilog_tt_open_wbo(removeH2)"
-
+output_folder = "test"
 # Đảm bảo thư mục output tồn tại
 os.makedirs(output_folder, exist_ok=True)
 

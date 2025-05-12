@@ -13,10 +13,9 @@ variable_dict = {}
 reverse_variable_dict = {}
 counter = 1
 hard_clauses = []
-# pypblib_encoding = pblib.AMK_BEST
+
 pypblib_encoding = pblib.PB_BEST
-# optilog_encoding = 'bdd'
-optilog_encoding = 'cardnetwrk'
+optilog_encoding = 'best'
 
 
 def get_variable(name):
@@ -47,6 +46,13 @@ def map_to_x_variables():
                 f"-{variable_dict[name]} {' '.join(map(str, shifts))} 0")
             for shift in shifts:
                 hard_clauses.append(f"-{shift} {variable_dict[name]} 0")
+
+            # shift_vars = [get_variable(f"o_{n}_{d}_{s}") for s in S]
+            # hard_clauses.append(
+            #     f"-{variable_dict[name]} {' '.join(map(str, shift_vars))} 0"
+            # )
+            # for shift_var in shift_vars:
+            #     hard_clauses.append(f"-{shift_var} {variable_dict[name]} 0")
         elif name.startswith('o_'):
             parts = name.split('_')
             n, d, s = parts[1], parts[2], parts[3]
@@ -186,8 +192,7 @@ def constraint_H3(N, D, forbidden_shifts, nurse_history):
                 for forbidden_shift in forbidden_shifts:
                     if forbidden_shift['precedingShiftType'] == last_shift_type:
                         for s2 in forbidden_shift['succeedingShiftTypes']:
-                            var2 = get_variable(
-                                f"o_{nurse_id}_0_{s2}")
+                            var2 = get_variable(f"o_{nurse_id}_0_{s2}")
                             hard_clauses.append(f"-{var2} 0")
 
     return clauses
@@ -316,7 +321,8 @@ def constraint_H3_SC(N, D, S, forbidden_shifts, nurse_history, weekdays):
 
     hard_clauses = []
     width = len(S)
-    isLack = False
+    # isLack = False
+    isLack = True
 
     for n in range(N):
         shifts = [get_variable(f"o_{n}_{d}_{s}")
@@ -329,24 +335,6 @@ def constraint_H3_SC(N, D, S, forbidden_shifts, nurse_history, weekdays):
 
         for gw in range(0, len(weekdays) * 7 - 1):
             glue_window(gw, isLack, very_first_shift)
-    # hard_clauses = []
-    # num_of_shifts = len(S)
-    # isLack = True
-
-    # for n in range(N):
-    #     shifts = [get_variable(f"x_{n}_{d}_{s}_{sk}")
-    #               for d in range(D) for s in S for sk in nurse_skills.get(n, [])]
-    #     very_first_shift = shifts[0]
-
-    #     num_of_skills = len(nurse_skills.get(n))
-    #     width = num_of_shifts * num_of_skills
-
-    #     for gw in range(0, len(weekdays) * 7):
-    #         encode_window(gw, width, very_first_shift,
-    #                       width * len(weekdays) * 7)
-
-    #     for gw in range(0, len(weekdays) * 7 - 1):
-    #         glue_window(gw, isLack, very_first_shift)
 
     if nurse_history:
         for nurse in nurse_history:
@@ -366,14 +354,8 @@ def constraint_H3_SC(N, D, S, forbidden_shifts, nurse_history, weekdays):
     return hard_clauses
 
 
-def constraint_H2(N, D, S, SK, weekdays, nurse_skills):
-    global variable_dict, reverse_variable_dict, counter
-
+def constraint_optilog_H2(N, D, S, SK, weekdays, nurse_skills):
     clauses = []
-    config = PBConfig()
-    config.set_PB_Encoder(pypblib_encoding)
-    # config.set_AMK_Encoder(pypblib_encoding)
-    pb2 = Pb2cnf(config)
 
     for d in range(D):
         for s in S:
@@ -385,11 +367,9 @@ def constraint_H2(N, D, S, SK, weekdays, nurse_skills):
 
                 # Ensure at least Cmin nurses are assigned (hard constraint)
                 if Cmin > 0 and len(nurses) >= Cmin:
-                    formula = []
 
-                    max_var_cmin = pb2.encode_at_least_k(
-                        nurses, Cmin, formula, len(variable_dict) + 1)
-
+                    max_var_cmin, formula = Encoder.at_least_k(
+                        nurses, Cmin, max_var=len(variable_dict), encoding=optilog_encoding)
                     for clause in formula:
                         clauses.append(" ".join(map(str, clause)) + " 0")
 
@@ -398,12 +378,13 @@ def constraint_H2(N, D, S, SK, weekdays, nurse_skills):
                         variable_dict[f"aux_cmin{var}"] = var
                         reverse_variable_dict[var] = f"aux_cmin{var}"
 
+                    global counter
                     counter = max_var_cmin + 1
 
     return clauses
 
 
-def constraint_optilog_H2(N, D, S, SK, weekdays, nurse_skills):
+def constraint_new_optilog_H2(N, D, S, SK, weekdays, nurse_skills):
     clauses = []
 
     for d in range(D):
@@ -575,7 +556,7 @@ def constraint_S1(N, D, S, SK, weekdays, nurse_skills, penalty_weight):
     return soft_clauses
 
 
-def constraint_optilog_S1(N, D, S, SK, weekdays, nurse_skills, penalty_weight):
+def constraint_S1_new_optilog(N, D, S, SK, weekdays, nurse_skills, penalty_weight):
     """
     Tạo các ràng buộc mềm để phạt việc không đáp ứng Copt, sử dụng biến phạt phụ trợ.
     Đồng thời thêm các ràng buộc cứng cần thiết vào danh sách hard_clauses toàn cục.
@@ -665,6 +646,36 @@ def constraint_optilog_S1(N, D, S, SK, weekdays, nurse_skills, penalty_weight):
 
     # Trả về danh sách các mệnh đề mềm ĐÃ được tạo bởi logic S1 này
     return soft_clauses_for_S1
+
+
+def constraint_S1_old_optilog(N, D, S, SK, weekdays, nurse_skills, penalty_weight):
+    global counter, variable_dict, reverse_variable_dict
+    soft_clauses = []
+
+    for d in range(D):
+        for s in S:
+            for sk in SK:
+                Copt = get_Copt(weekdays, d, s, sk)
+                Cmin = get_Cmin(weekdays, d, s, sk)
+                if Copt - Cmin <= 0:
+                    continue
+
+                # Penalize each missing nurse below Copt (soft constraint)
+                if Copt > 0:
+                    nurses = [get_variable(f"x_{n}_{d}_{s}_{sk}") for n in range(
+                        N) if sk in nurse_skills.get(n, [])]
+                    max_var_copt, formula = Encoder.at_least_k(
+                        nurses, Copt, max_var=len(variable_dict), encoding=optilog_encoding)
+                    for clause in formula:
+                        soft_clauses.append(
+                            (penalty_weight, " ".join(map(str, clause)) + " 0"))
+
+                    for var in range(len(variable_dict) + 1, max_var_copt + 1):
+                        variable_dict[f"aux_cmax{var}"] = var
+                        reverse_variable_dict[var] = f"aux_cmax{var}"
+
+                    counter = max_var_copt + 1
+    return soft_clauses
 # S4. Preferences(10)
 
 
@@ -974,102 +985,8 @@ def constraint_S3(weekdays, nurse_history, nurse_name_to_index, nurse_contracts,
                     soft_clauses.append((penalty_weight, f"-{var} 0"))
     return soft_clauses
 
-
-def constraint_total_weekends_new_pypblib(N, W, nurse_contracts, contracts, penalty_weight):
-    """
-    Tạo ràng buộc mềm S7 (max working weekends) dùng pypblib cho phần cứng.
-
-    Thêm các mệnh đề CỨNG vào global `hard_clauses`.
-    Trả về danh sách các mệnh đề MỀM.
-    """
-    global counter, hard_clauses, variable_dict, reverse_variable_dict
-
-    soft_clauses_for_S7 = []
-
-    # Khởi tạo pypblib
-    config = PBConfig()
-    config.set_PB_Encoder(pypblib_encoding)
-    pb2 = Pb2cnf(config)
-
-    for n in range(N):
-        contract_id = nurse_contracts[n]
-        contract = contracts[contract_id]
-        # Dùng W+1 làm mặc định nếu không có trong hợp đồng
-        max_weekends = contract.get('maximumNumberOfWorkingWeekends', W + 1)
-
-        # Chỉ mã hóa nếu có giới hạn thực sự (max_weekends < W)
-        if 0 <= max_weekends < W:
-            # Lấy các biến q_n_w (đã được định nghĩa ở đâu đó dựa trên e_n_sat/sun)
-            weekend_vars_q = [get_variable(f"q_{n}_{w}") for w in range(W)]
-            num_weekend_vars = len(weekend_vars_q)
-
-            if not weekend_vars_q:  # Bỏ qua nếu không có biến cuối tuần
-                continue
-
-            # --- Mã hóa sum(q_n_w) <= max_weekends ---
-            # Biến đổi: sum(-q_n_w) >= num_weekend_vars - max_weekends
-            target_atleast_k_prime = num_weekend_vars - max_weekends
-
-            # 1. Tạo biến phạt cho việc *vượt quá* max_weekends
-            num_penalty = target_atleast_k_prime
-            penalty_vars_excess = []
-            if num_penalty > 0:
-                for j in range(num_penalty):
-                    p_var = get_variable(f"penalty_s7_excess_pblib_{n}_{j}")
-                    penalty_vars_excess.append(p_var)
-
-            # 2. Tạo biến phụ trợ phủ định (-q_n_w) và mệnh đề cứng định nghĩa chúng
-            negated_q_vars_helper = []
-            for w_idx, q_var in enumerate(weekend_vars_q):
-                # Cần tên gốc của q_var để tạo tên biến phủ định duy nhất
-                if q_var in reverse_variable_dict:  # Kiểm tra xem q_var có tồn tại không
-                    q_var_name = reverse_variable_dict[q_var]
-                    # Thêm _s7 để tránh trùng
-                    neg_q_helper_name = f"neg_{q_var_name}_s7"
-                    neg_q_helper_var = get_variable(neg_q_helper_name)
-                    negated_q_vars_helper.append(neg_q_helper_var)
-                    # Định nghĩa cứng: neg_q <=> NOT q
-                    hard_clauses.append(f"-{neg_q_helper_var} -{q_var} 0")
-                    hard_clauses.append(f"{neg_q_helper_var} {q_var} 0")
-                else:
-                    # Xử lý trường hợp q_var không tìm thấy (có thể là lỗi logic trước đó)
-                    print(
-                        f"CẢNH BÁO (S7 pypblib): Không tìm thấy tên cho biến ID {q_var}")
-                    # Có thể bỏ qua biến này hoặc dừng chương trình tùy logic của bạn
-                    continue
-
-            # 3. Ràng buộc CỨNG: sum(neg_q_helpers) + sum(penalty_vars_excess) >= target_atleast_k_prime
-            combined_vars_for_atleast = negated_q_vars_helper + penalty_vars_excess
-
-            # Đảm bảo target_atleast_k_prime >= 0 và có biến để mã hóa
-            if target_atleast_k_prime >= 0 and combined_vars_for_atleast:
-                formula_hard = []
-                current_top_var = counter - 1
-                top_var_pblib = pb2.encode_at_least_k(
-                    combined_vars_for_atleast,
-                    target_atleast_k_prime,
-                    formula_hard,
-                    current_top_var + 1
-                )
-                # Thêm mệnh đề cứng
-                for clause in formula_hard:
-                    hard_clauses.append(" ".join(map(str, clause)) + " 0")
-                # Cập nhật biến phụ trợ
-                for var_idx in range(current_top_var + 1, top_var_pblib + 1):
-                    aux_name = f"aux_s7_pblib_{n}_{var_idx}"
-                    if var_idx not in reverse_variable_dict:
-                        variable_dict[aux_name] = var_idx
-                        reverse_variable_dict[var_idx] = aux_name
-                counter = max(counter, top_var_pblib + 1)
-
-            # 4. Ràng buộc MỀM cho biến phạt
-            for p_var in penalty_vars_excess:
-                soft_clauses_for_S7.append((penalty_weight, f"-{p_var} 0"))
-
-    return soft_clauses_for_S7
-
-
-def constraint_optilog_total_weekends(N, W, nurse_contracts, contracts, penalty_weight):
+# Constraint Total Weekends
+def constraint_total_weekends_new_optilog(N, W, nurse_contracts, contracts, penalty_weight):
     """
     Sửa đổi để sử dụng biến phạt phụ trợ cho ràng buộc maximumNumberOfWorkingWeekends.
     Sử dụng phép biến đổi sang at_least_k với biến phủ định phụ trợ.
@@ -1151,14 +1068,9 @@ def constraint_optilog_total_weekends(N, W, nurse_contracts, contracts, penalty_
     return soft_clauses_for_S7
 
 
-def constraint_total_weekends(N, W, nurse_contracts, contracts, penalty_weight):
+def constraint_total_weekends_old_optilog(N, W, nurse_contracts, contracts, penalty_weight):
     global counter, variable_dict, reverse_variable_dict
-
     soft_clauses = []
-    config = PBConfig()
-    config.set_PB_Encoder(pypblib_encoding)
-    # config.set_AMK_Encoder(pypblib_encoding)
-    pb2 = Pb2cnf(config)
 
     for n in range(N):
         contract_id = nurse_contracts[n]
@@ -1167,148 +1079,23 @@ def constraint_total_weekends(N, W, nurse_contracts, contracts, penalty_weight):
 
         if max_weekends > 0:
             weekend_vars = [get_variable(f"q_{n}_{w}") for w in range(W)]
-            formula = []
-            max_var_cw = pb2.encode_at_most_k(
-                weekend_vars, max_weekends, formula, len(variable_dict) + 1)
+            max_var, formula = Encoder.at_most_k(
+                weekend_vars, max_weekends, max_var=len(variable_dict), encoding=optilog_encoding)
 
             for clause in formula:
                 soft_clauses.append(
                     (penalty_weight, " ".join(map(str, clause)) + " 0"))
 
-            for var in range(len(variable_dict) + 1, max_var_cw + 1):
+            for var in range(len(variable_dict) + 1, max_var + 1):
                 variable_dict[f"aux_cwmax{var}"] = var
                 reverse_variable_dict[var] = f"aux_cwmax{var}"
 
-            counter = max_var_cw + 1
+            counter = max_var + 1
 
     return soft_clauses
 
-
-def constraint_total_assignments_new_pypblib(N, D, nurse_contracts, contracts, penalty_weight):
-    """
-    Tạo ràng buộc mềm S6 (min/max total assignments) dùng pypblib cho phần cứng.
-
-    Thêm các mệnh đề CỨNG vào global `hard_clauses`.
-    Trả về danh sách các mệnh đề MỀM.
-    """
-    global counter, hard_clauses, variable_dict, reverse_variable_dict
-
-    soft_clauses_for_S6 = []
-
-    # Khởi tạo pypblib (chỉ cần một lần nếu dùng cùng config)
-    config = PBConfig()
-    config.set_PB_Encoder(pypblib_encoding)
-    pb2 = Pb2cnf(config)
-
-    for n in range(N):
-        contract_id = nurse_contracts[n]
-        contract = contracts[contract_id]
-        # Sử dụng D+1 và -1 làm giá trị mặc định nếu không có trong hợp đồng
-        max_assign = contract.get('maximumNumberOfAssignments', D + 1)
-        # Dùng -1 để dễ kiểm tra
-        min_assign = contract.get('minimumNumberOfAssignments', -1)
-
-        # Lấy các biến e_n_d cho y tá n
-        assignment_vars_e = [get_variable(f"e_{n}_{d}") for d in range(D)]
-        num_assign_vars = len(assignment_vars_e)
-
-        if not assignment_vars_e:  # Bỏ qua nếu y tá không có ngày nào
-            continue
-
-        # --- Phần Max assignments: sum(e_n_d) <= max_assign ---
-        # Chỉ mã hóa nếu có giới hạn thực sự (max_assign < D)
-        if 0 <= max_assign < num_assign_vars:
-            target_atleast_k_prime_max = num_assign_vars - \
-                max_assign  # K' cho phép biến đổi at-least-k
-
-            # 1. Tạo biến phạt vượt quá max_assign
-            num_penalty_max = target_atleast_k_prime_max
-            penalty_vars_max = []
-            if num_penalty_max > 0:
-                for j in range(num_penalty_max):
-                    p_var = get_variable(f"penalty_s6_max_pblib_{n}_{j}")
-                    penalty_vars_max.append(p_var)
-
-            # 2. Tạo biến phụ trợ phủ định (-e_n_d) và mệnh đề cứng định nghĩa chúng
-            negated_e_vars_helper = []
-            for d_idx, e_var in enumerate(assignment_vars_e):
-                e_var_name = reverse_variable_dict[e_var]
-                # Thêm _s6 để tránh trùng tên
-                neg_e_helper_name = f"neg_{e_var_name}_s6"
-                neg_e_helper_var = get_variable(neg_e_helper_name)
-                negated_e_vars_helper.append(neg_e_helper_var)
-                # Định nghĩa cứng: neg_e <=> NOT e
-                hard_clauses.append(f"-{neg_e_helper_var} -{e_var} 0")
-                hard_clauses.append(f"{neg_e_helper_var} {e_var} 0")
-
-            # 3. Ràng buộc CỨNG: sum(neg_e_helpers) + sum(penalty_vars_max) >= target_atleast_k_prime_max
-            combined_vars_max = negated_e_vars_helper + penalty_vars_max
-            if target_atleast_k_prime_max >= 0 and combined_vars_max:
-                formula_max_hard = []
-                current_top_var = counter - 1
-                top_var_pblib_max = pb2.encode_at_least_k(
-                    combined_vars_max,
-                    target_atleast_k_prime_max,
-                    formula_max_hard,
-                    current_top_var + 1
-                )
-                # Thêm mệnh đề cứng
-                for clause in formula_max_hard:
-                    hard_clauses.append(" ".join(map(str, clause)) + " 0")
-                # Cập nhật biến phụ trợ
-                for var_idx in range(current_top_var + 1, top_var_pblib_max + 1):
-                    aux_name = f"aux_s6_max_pblib_{n}_{var_idx}"
-                    if var_idx not in reverse_variable_dict:
-                        variable_dict[aux_name] = var_idx
-                        reverse_variable_dict[var_idx] = aux_name
-                counter = max(counter, top_var_pblib_max + 1)
-
-            # 4. Ràng buộc MỀM cho biến phạt max
-            for p_var in penalty_vars_max:
-                soft_clauses_for_S6.append((penalty_weight, f"-{p_var} 0"))
-
-        # --- Phần Min assignments: sum(e_n_d) >= min_assign ---
-        # Chỉ mã hóa nếu có giới hạn thực sự (min_assign > 0)
-        if min_assign > 0:
-            max_shortfall_min = min_assign
-
-            # 1. Tạo biến phạt thiếu hụt min_assign
-            penalty_vars_min = []
-            if max_shortfall_min > 0:
-                for j in range(max_shortfall_min):
-                    p_var = get_variable(f"penalty_s6_min_pblib_{n}_{j}")
-                    penalty_vars_min.append(p_var)
-
-            # 2. Ràng buộc CỨNG: sum(e_n_d) + sum(penalty_vars_min) >= min_assign
-            combined_vars_min = assignment_vars_e + penalty_vars_min
-            if combined_vars_min:  # Chỉ mã hóa nếu có biến
-                formula_min_hard = []
-                current_top_var = counter - 1
-                top_var_pblib_min = pb2.encode_at_least_k(
-                    combined_vars_min,
-                    min_assign,
-                    formula_min_hard,
-                    current_top_var + 1
-                )
-                # Thêm mệnh đề cứng
-                for clause in formula_min_hard:
-                    hard_clauses.append(" ".join(map(str, clause)) + " 0")
-                # Cập nhật biến phụ trợ
-                for var_idx in range(current_top_var + 1, top_var_pblib_min + 1):
-                    aux_name = f"aux_s6_min_pblib_{n}_{var_idx}"
-                    if var_idx not in reverse_variable_dict:
-                        variable_dict[aux_name] = var_idx
-                        reverse_variable_dict[var_idx] = aux_name
-                counter = max(counter, top_var_pblib_min + 1)
-
-            # 3. Ràng buộc MỀM cho biến phạt min
-            for p_var in penalty_vars_min:
-                soft_clauses_for_S6.append((penalty_weight, f"-{p_var} 0"))
-
-    return soft_clauses_for_S6
-
-
-def constraint_optilog_total_assignments(N, D, nurse_contracts, contracts, penalty_weight):
+# Constraint Total Assignments
+def constraint_total_assignments_new_optilog(N, D, nurse_contracts, contracts, penalty_weight):
     """
     Sửa đổi để sử dụng biến phạt phụ trợ cho min/max total assignments.
     Sử dụng phép biến đổi sang at_least_k cho phần max.
@@ -1415,14 +1202,9 @@ def constraint_optilog_total_assignments(N, D, nurse_contracts, contracts, penal
     return soft_clauses_for_S6
 
 
-def constraint_total_assignments(N, D, nurse_contracts, contract, penalty_weight):
+def constraint_total_assignments_old_optilog(N, D, nurse_contracts, contract, penalty_weight):
     global counter, variable_dict, reverse_variable_dict
-
     soft_clauses = []
-    config = PBConfig()
-    config.set_PB_Encoder(pypblib_encoding)
-    # config.set_AMK_Encoder(pypblib_encoding)
-    pb2 = Pb2cnf(config)
 
     for n in range(N):
         contract_id = nurse_contracts[n]
@@ -1434,70 +1216,36 @@ def constraint_total_assignments(N, D, nurse_contracts, contract, penalty_weight
         if max_assign > 0:
             assignment_vars = [get_variable(
                 f"e_{n}_{d}") for d in range(D)]
-            formula = []
-            max_var_max_ass = pb2.encode_at_most_k(
-                assignment_vars, max_assign, formula, len(variable_dict) + 1)
-
+            max_var, formula = Encoder.at_most_k(
+                assignment_vars, max_assign, max_var=len(variable_dict), encoding=optilog_encoding)
             for clause in formula:
                 soft_clauses.append(
                     (penalty_weight, " ".join(map(str, clause)) + " 0"))
 
-            for var in range(len(variable_dict) + 1, max_var_max_ass + 1):
+            for var in range(len(variable_dict) + 1, max_var + 1):
                 variable_dict[f"aux_max_assign{var}"] = var
                 reverse_variable_dict[var] = f"aux_max_assign{var}"
 
-            counter = max_var_max_ass + 1
+            counter = max_var + 1
 
         # Min assignments:
         if min_assign > 0:
             assignment_vars = [get_variable(
                 f"e_{n}_{d}") for d in range(D)]
-            formula = []
-            max_var_min_ass = pb2.encode_at_least_k(
-                assignment_vars, min_assign, formula, len(variable_dict) + 1)
+            min_var, formula = Encoder.at_least_k(
+                assignment_vars, min_assign, max_var=len(variable_dict), encoding=optilog_encoding)
 
             for clause in formula:
                 soft_clauses.append(
                     (penalty_weight, " ".join(map(str, clause)) + " 0"))
 
-            for var in range(len(variable_dict) + 1, max_var_min_ass + 1):
+            for var in range(len(variable_dict) + 1, min_var + 1):
                 variable_dict[f"aux_min_assign{var}"] = var
                 reverse_variable_dict[var] = f"aux_min_assign{var}"
 
-            counter = max_var_min_ass + 1
+            counter = min_var + 1
 
     return soft_clauses
-
-
-def run_open_wbo(wcnf_path, timeout, output_file):
-    global reverse_variable_dict
-    try:
-        cmd = ["./open-wbo_static", wcnf_path, f"-cpu-lim={timeout}"]
-        result = subprocess.run(cmd, capture_output=True, text=True)
-
-        with open(output_file, 'w') as f:
-            f.write(result.stdout)
-            if result.stderr:
-                f.write(result.stderr)
-
-        output = result.stdout
-        with open("log.txt", 'w') as f:
-            f.write(output)
-        if "s SATISFIABLE" in output or "s OPTIMUM" in output:
-            solution = [reverse_variable_dict[abs(int(lit))] for line in output.splitlines() if line.startswith('v')
-                        for lit in line.split()[1:] if int(lit) > 0]
-            return solution
-        elif "s UNSATISFIABLE" in output:
-            print("The problem is unsatisfiable.")
-            return None
-        else:
-            print("No valid solution found in the output.")
-            return None
-
-    except Exception as e:
-        print(f"An error occurred while running Open-WBO: {e}")
-        return None
-
 
 def run_tt_open_wbo_inc(wcnf_path, timeout, output_file):
     """
@@ -1513,10 +1261,10 @@ def run_tt_open_wbo_inc(wcnf_path, timeout, output_file):
     """
     global reverse_variable_dict
     try:
-        cmd = ["timeout", str(timeout),
-               "./tt-open-wbo-inc-Glucose4_1_static", wcnf_path]
         # cmd = ["timeout", str(timeout),
-        #        "./tt-open-wbo-inc-IntelSATSolver_static", wcnf_path]
+        #        "./tt-open-wbo-inc-Glucose4_1_static", wcnf_path]
+        cmd = ["timeout", str(timeout),
+               "./tt-open-wbo-inc-IntelSATSolver_static", wcnf_path]
         result = subprocess.run(cmd, capture_output=True, text=True)
 
         # Save the solver output to the specified file
@@ -1712,16 +1460,19 @@ def generate_hard_clauses(N, D, S, SK, weekdays, nurse_skills, forbidden_shifts,
     """
     global hard_clauses
 
-    # # Constraint H1: No overlapping shifts
+    # Constraint H1: No overlapping shifts
     hard_clauses_H1 = constraint_H1(N, D, S)
     hard_clauses += hard_clauses_H1
     print(f"Number of clauses for H1: {len(hard_clauses_H1)}")
 
     # # Constraint H3: Forbidden shift successions
-    hard_clauses += constraint_H3(N, D, forbidden_shifts, nurse_history)
+    hard_clauses_H3 = constraint_H3(N, D, forbidden_shifts, nurse_history)
+    hard_clauses += hard_clauses_H3
+    print(f"Number of clauses for H3: {len(hard_clauses_H3)}")
 
     # Constraint H1&H3 (using SC)
-    # hard_clauses_H1_H3 = constraint_H3_SC(N, D, S, forbidden_shifts, nurse_history, weekdays)
+    # hard_clauses_H1_H3 = constraint_H3_SC(
+    #     N, D, S, forbidden_shifts, nurse_history, weekdays)
     # hard_clauses += hard_clauses_H1_H3
     # print(f"Number of clauses for H1_H3: {len(hard_clauses_H1_H3)}")
 
@@ -1730,16 +1481,17 @@ def generate_hard_clauses(N, D, S, SK, weekdays, nurse_skills, forbidden_shifts,
     hard_clauses += hard_clauses_aux
     print(f"Number of clauses for aux: {len(hard_clauses_aux)}")
 
-    # Constraint H2: Minimum coverage
-    hard_clauses_H2 = constraint_H2(N, D, S, SK, weekdays, nurse_skills)
-    hard_clauses += hard_clauses_H2
-    print(f"Number of clauses for H2: {len(hard_clauses_H2)}")
 
     # Constraint H2: Minimum coverage (optilog)
     # hard_clauses_H2 = constraint_optilog_H2(
     #     N, D, S, SK, weekdays, nurse_skills)
     # hard_clauses += hard_clauses_H2
-    # print(f"Number of clauses for H2 optilog: {len(hard_clauses_H2)}")
+    # print(f"Number of clauses for H2 old optilog: {len(hard_clauses_H2)}")
+
+    hard_clauses_H2 = constraint_new_optilog_H2(
+        N, D, S, SK, weekdays, nurse_skills)
+    hard_clauses += hard_clauses_H2
+    print(f"Number of clauses for H2 new optilog: {len(hard_clauses_H2)}")
 
     return hard_clauses
 
@@ -1750,23 +1502,19 @@ def generate_soft_clauses(N, D, S, SK, W, weekdays, nurse_skills, nurse_name_to_
     """
     soft_clauses = []
 
-    # Soft constraint S1 (using old pybpblib): Optimal coverage
-    soft_clauses_S1 = constraint_S1(
+    # # Soft constraint S1 (using old optilog): Optimal coverage
+    # soft_clauses_S1 = constraint_S1_old_optilog(
+    #     N, D, S, SK, weekdays, nurse_skills, penalty_weight=30)
+    # soft_clauses += soft_clauses_S1
+    # print(
+    #     f"Number of soft clauses for S1_old_optilog : {len(soft_clauses_S1)}")
+
+    # Soft constraint S1 (using new optilog): Optimal coverage
+    soft_clauses_S1 = constraint_S1_new_optilog(
         N, D, S, SK, weekdays, nurse_skills, penalty_weight=30)
     soft_clauses += soft_clauses_S1
-    print(f"Number of soft clauses for S1: {len(soft_clauses_S1)}")
-
-    # Soft constraint S1 (using new pybpblib): Optimal coverage
-    # soft_clauses_S1 = constraint_S1_pypblib(
-    #     N, D, S, SK, weekdays, nurse_skills, penalty_weight=30)
-    # soft_clauses += soft_clauses_S1
-    # print(f"Number of soft clauses for S1_pypblib: {len(soft_clauses_S1)}")
-
-    # Soft constraint S1 (using optilog): Optimal coverage
-    # soft_clauses_S1 = constraint_optilog_S1(
-    #     N, D, S, SK, weekdays, nurse_skills, penalty_weight=30)
-    # soft_clauses += soft_clauses_S1
-    # print(f"Number of soft clauses for S1_optilog : {len(soft_clauses_S1)}")
+    print(
+        f"Number of soft clauses for S1_new_optilog : {len(soft_clauses_S1)}")
 
     # Soft constraint S5: Complete weekends
     soft_clauses_S5 = constraint_S5(
@@ -1800,47 +1548,33 @@ def generate_soft_clauses(N, D, S, SK, W, weekdays, nurse_skills, nurse_name_to_
     soft_clauses += soft_clauses_S3
     print(f"Number of soft clauses for S3: {len(soft_clauses_S3)}")
 
-    # Soft constraint S7 (using new pypblib): Total working weekends
-    # soft_clauses_total_weekends = constraint_total_weekends_new_pypblib(
-    #     N, W, nurse_contracts, contracts, penalty_weight=30)
-    # soft_clauses += soft_clauses_total_weekends
-    # print(
-    #     f"Number of soft clauses for total_weekends: {len(soft_clauses_total_weekends)}")
-
-    # # Soft constraint S6 (using new pypblib): Total assignments
-    # soft_clauses_total_assignments = constraint_total_assignments_new_pypblib(
-    #     N, D, nurse_contracts, contracts, penalty_weight=20)
-    # soft_clauses += soft_clauses_total_assignments
-    # print(
-    #     f"Number of soft clauses for total_assignments: {len(soft_clauses_total_assignments)}")
-
-    # Soft constraint S7 (using old pypblib): Total working weekends
-    soft_clauses_total_weekends = constraint_total_weekends(
-        N, W, nurse_contracts, contracts, penalty_weight=30)
-    soft_clauses += soft_clauses_total_weekends
-    print(
-        f"Number of soft clauses for total_weekends: {len(soft_clauses_total_weekends)}")
-
-    # Soft constraint S6 (using old pypblib): Total assignments
-    soft_clauses_total_assignments = constraint_total_assignments(
-        N, D, nurse_contracts, contracts, penalty_weight=20)
-    soft_clauses += soft_clauses_total_assignments
-    print(
-        f"Number of soft clauses for total_assignments: {len(soft_clauses_total_assignments)}")
-
-    # # Soft constraint S7 (using optilog): Total working weekends
-    # soft_clauses_optilog_total_weekends = constraint_optilog_total_weekends(
+    # # Soft constraint S7 (using old optilog): Total working weekends
+    # soft_clauses_optilog_total_weekends = constraint_total_weekends_old_optilog(
     #     N, W, nurse_contracts, contracts, penalty_weight=30)
     # soft_clauses += soft_clauses_optilog_total_weekends
     # print(
-    #     f"Number of soft clauses for optilog_total_weekends: {len(soft_clauses_optilog_total_weekends)}")
+    #     f"Number of soft clauses for old_optilog_total_weekends: {len(soft_clauses_optilog_total_weekends)}")
 
-    # # Soft constraint S6 (using optilog): Total assignments
-    # soft_clauses_optilog_total_assignments = constraint_optilog_total_assignments(
+    # # Soft constraint S6 (using old optilog): Total assignments
+    # soft_clauses_optilog_total_assignments = constraint_total_assignments_old_optilog(
     #     N, D, nurse_contracts, contracts, penalty_weight=20)
     # soft_clauses += soft_clauses_optilog_total_assignments
     # print(
-    #     f"Number of soft clauses for optilog_total_assignments: {len(soft_clauses_optilog_total_assignments)}")
+    #     f"Number of soft clauses for old_optilog_total_assignments: {len(soft_clauses_optilog_total_assignments)}")
+
+    # Soft constraint S7 (using new optilog): Total working weekends
+    soft_clauses_optilog_total_weekends = constraint_total_weekends_new_optilog(
+        N, W, nurse_contracts, contracts, penalty_weight=30)
+    soft_clauses += soft_clauses_optilog_total_weekends
+    print(
+        f"Number of soft clauses for new_optilog_total_weekends: {len(soft_clauses_optilog_total_weekends)}")
+
+    # Soft constraint S6 (using new optilog): Total assignments
+    soft_clauses_optilog_total_assignments = constraint_total_assignments_new_optilog(
+        N, D, nurse_contracts, contracts, penalty_weight=20)
+    soft_clauses += soft_clauses_optilog_total_assignments
+    print(
+        f"Number of soft clauses for new_optilog_total_assignments: {len(soft_clauses_optilog_total_assignments)}")
 
     return soft_clauses
 
@@ -2120,281 +1854,6 @@ def debug_s6_penalty(solution_vars, N, D, nurse_contracts, contracts):
     print("------------------------------------")
 
 
-def debug_s1_pypblib_penalty(solution_vars, N, D, S, SK, weekdays, nurse_skills):
-    """
-    Kiểm tra và in thông tin debug cho các biến phạt của ràng buộc S1.
-
-    Args:
-        solution_vars (set): Tập hợp các tên biến dương trong lời giải cuối cùng.
-        N, D, S, SK, weekdays, nurse_skills: Dữ liệu cần thiết để tính Copt.
-    """
-    print("\n--- DEBUGGING S1 PENALTY VARIABLES ---")
-    total_s1_mismatches = 0
-    total_expected_penalty_vars = 0
-    total_actual_penalty_vars = 0
-
-    # Tạo một bản đồ nhanh để tra cứu biến nào có trong lời giải
-    # solution_set = set(solution_vars) # Giả sử solution_vars đã là set rồi
-
-    for d in range(D):
-        for s in S:
-            for sk in SK:
-                Copt = get_Copt(weekdays, d, s, sk)
-                Cmin = get_Cmin(weekdays, d, s, sk)
-
-                # Chỉ kiểm tra các trường hợp mà S1 có thể áp dụng (Copt > Cmin)
-                if Copt <= Cmin:
-                    continue
-
-                # Lấy các biến y tá và đếm số y tá thực tế được phân công
-                actual_nurses = 0
-                relevant_nurse_vars = []
-                for n in range(N):
-                    if sk in nurse_skills.get(n, []):
-                        nurse_var_name = f"x_{n}_{d}_{s}_{sk}"
-                        relevant_nurse_vars.append(nurse_var_name)
-                        # Kiểm tra xem biến y tá có trong lời giải không
-                        if nurse_var_name in solution_vars:
-                            actual_nurses += 1
-
-                # Tính toán thiếu hụt dự kiến
-                expected_shortfall = 0
-                if actual_nurses < Copt:
-                    expected_shortfall = Copt - actual_nurses
-
-                # Tính toán số lượng biến phạt tối đa có thể có cho yêu cầu này
-                max_possible_shortfall = Copt if not relevant_nurse_vars else Copt - Cmin
-                if max_possible_shortfall < 0:
-                    max_possible_shortfall = 0  # Đảm bảo không âm
-
-                # Đếm số biến phạt thực tế được bật trong lời giải
-                actual_penalty_vars_on = 0
-                relevant_penalty_vars = []
-                for j in range(max_possible_shortfall):
-                    # Lấy tên biến phạt đã dùng trong constraint_optilog_S1
-                    penalty_var_name = f"penalty_s1_pblib_{d}_{s}_{sk}_{j}"
-                    relevant_penalty_vars.append(penalty_var_name)
-                    # Kiểm tra xem biến phạt có trong lời giải không
-                    if penalty_var_name in solution_vars:
-                        actual_penalty_vars_on += 1
-
-                # So sánh và báo cáo nếu có sự không khớp
-                # Chỉ báo cáo nếu có sự thiếu hụt dự kiến HOẶC có biến phạt được bật (để bắt lỗi thừa)
-                if expected_shortfall > 0 or actual_penalty_vars_on > 0:
-                    is_match = (expected_shortfall == actual_penalty_vars_on)
-                    status = "OK" if is_match else "MISMATCH"
-                    total_expected_penalty_vars += expected_shortfall
-                    total_actual_penalty_vars += actual_penalty_vars_on
-
-                    if not is_match:
-                        total_s1_mismatches += 1
-                        print(f"[{status}] Day={d}, Shift={s}, Skill={sk}: "
-                              f"Copt={Copt}, ActualNurses={actual_nurses}, "
-                              f"ExpectedShortfall={expected_shortfall}, "
-                              f"ActualPenaltyVarsON={actual_penalty_vars_on}")
-                        # Tùy chọn: In ra các biến y tá và biến phạt liên quan để debug sâu hơn
-                        print(f"   Relevant Nurses: {relevant_nurse_vars}")
-                        print(f"   Relevant Penalty: {relevant_penalty_vars}")
-                        print(
-                            f"   Solution Vars Subset (Penalty): {[p for p in relevant_penalty_vars if p in solution_vars]}")
-
-    print("--- S1 DEBUG SUMMARY ---")
-    print(f"Total Mismatches Found: {total_s1_mismatches}")
-    print(
-        f"Total Expected Penalty Variables ON (based on shortfall): {total_expected_penalty_vars}")
-    print(
-        f"Total Actual Penalty Variables ON (in solution): {total_actual_penalty_vars}")
-    if total_s1_mismatches == 0:
-        print("S1 Penalty mechanism seems to be working correctly.")
-    else:
-        print("Potential issues found in S1 penalty mechanism or its interaction.")
-    print("------------------------------------")
-
-
-def debug_s7_pypblib_penalty(solution_vars, N, W, nurse_contracts, contracts):
-    """
-    Kiểm tra và in thông tin debug cho các biến phạt của ràng buộc S7 (Max Working Weekends).
-    """
-    print("\n--- DEBUGGING S7 PENALTY VARIABLES (Max Weekends) ---")
-    total_s7_mismatches = 0
-    total_expected_penalty_vars = 0
-    total_actual_penalty_vars = 0
-    # solution_set = set(solution_vars) # Giả sử đã là set
-
-    for n in range(N):
-        contract_id = nurse_contracts[n]
-        contract = contracts[contract_id]
-        max_weekends = contract.get('maximumNumberOfWorkingWeekends', W + 1)
-
-        # Chỉ kiểm tra nếu có giới hạn thực sự
-        if max_weekends < W:
-            weekend_vars_q_names = [f"q_{n}_{w}" for w in range(W)]
-            num_weekend_vars = len(weekend_vars_q_names)
-
-            # Đếm số cuối tuần thực tế làm việc
-            actual_weekends = 0
-            for q_var_name in weekend_vars_q_names:
-                if q_var_name in solution_vars:
-                    actual_weekends += 1
-
-            # Tính số cuối tuần vượt quá dự kiến
-            expected_excess = 0
-            if actual_weekends > max_weekends:
-                expected_excess = actual_weekends - max_weekends
-
-            # Đếm số biến phạt thực tế được bật
-            actual_penalty_vars_on = 0
-            num_penalty_possible = num_weekend_vars - max_weekends
-            relevant_penalty_vars = []
-            if num_penalty_possible > 0:
-                for j in range(num_penalty_possible):
-                    # Dùng tên biến phạt đã dùng trong hàm constraint_optilog_total_weekends
-                    penalty_var_name = f"penalty_s7_excess_pblib_{n}_{j}"
-                    relevant_penalty_vars.append(penalty_var_name)
-                    if penalty_var_name in solution_vars:
-                        actual_penalty_vars_on += 1
-
-            # So sánh và báo cáo nếu có sự không khớp
-            if expected_excess > 0 or actual_penalty_vars_on > 0:
-                is_match = (expected_excess == actual_penalty_vars_on)
-                status = "OK" if is_match else "MISMATCH"
-                total_expected_penalty_vars += expected_excess
-                total_actual_penalty_vars += actual_penalty_vars_on
-
-                if not is_match:
-                    total_s7_mismatches += 1
-                    print(f"[{status}] Nurse={n}: MaxWeekends={max_weekends}, ActualWeekends={actual_weekends}, "
-                          f"ExpectedExcess={expected_excess}, ActualPenaltyVarsON={actual_penalty_vars_on}")
-                    print(f"   Relevant Penalty: {relevant_penalty_vars}")
-                    print(
-                        f"   Solution Vars Subset (Penalty): {[p for p in relevant_penalty_vars if p in solution_vars]}")
-
-    print("--- S7 DEBUG SUMMARY ---")
-    print(f"Total Mismatches Found: {total_s7_mismatches}")
-    print(
-        f"Total Expected Penalty Variables ON (based on excess): {total_expected_penalty_vars}")
-    print(
-        f"Total Actual Penalty Variables ON (in solution): {total_actual_penalty_vars}")
-    if total_s7_mismatches == 0:
-        print("S7 Max Weekends Penalty mechanism seems to be working correctly.")
-    else:
-        print("Potential issues found in S7 Max Weekends penalty mechanism.")
-    print("------------------------------------")
-
-
-def debug_s6_pypblib_penalty(solution_vars, N, D, nurse_contracts, contracts):
-    """
-    Kiểm tra và in thông tin debug cho các biến phạt của ràng buộc S6 (Min/Max Total Assignments).
-    """
-    print("\n--- DEBUGGING S6 PENALTY VARIABLES (Min/Max Assignments) ---")
-    total_s6_mismatches_max = 0
-    total_s6_mismatches_min = 0
-    total_expected_penalty_max = 0
-    total_actual_penalty_max = 0
-    total_expected_penalty_min = 0
-    total_actual_penalty_min = 0
-    # solution_set = set(solution_vars) # Giả sử đã là set
-
-    for n in range(N):
-        contract_id = nurse_contracts[n]
-        contract = contracts[contract_id]
-        max_assign = contract.get('maximumNumberOfAssignments', D + 1)
-        min_assign = contract.get('minimumNumberOfAssignments', 0)
-
-        assignment_vars_e_names = [f"e_{n}_{d}" for d in range(D)]
-        num_assign_vars = len(assignment_vars_e_names)
-
-        if not assignment_vars_e_names:
-            continue
-
-        # Đếm số ca làm thực tế
-        actual_assignments = 0
-        for e_var_name in assignment_vars_e_names:
-            if e_var_name in solution_vars:
-                actual_assignments += 1
-
-        # --- Kiểm tra Phần Max Assignments (<= max_assign) ---
-        if max_assign < num_assign_vars:
-            expected_excess_max = 0
-            if actual_assignments > max_assign:
-                expected_excess_max = actual_assignments - max_assign
-
-            actual_penalty_vars_on_max = 0
-            num_penalty_possible_max = num_assign_vars - max_assign
-            relevant_penalty_vars_max = []
-            if num_penalty_possible_max > 0:
-                for j in range(num_penalty_possible_max):
-                    # Dùng tên biến phạt đã dùng trong hàm constraint_optilog_total_assignments
-                    penalty_var_name = f"penalty_s6_max_pblib_{n}_{j}"
-                    relevant_penalty_vars_max.append(penalty_var_name)
-                    if penalty_var_name in solution_vars:
-                        actual_penalty_vars_on_max += 1
-
-            if expected_excess_max > 0 or actual_penalty_vars_on_max > 0:
-                is_match_max = (expected_excess_max ==
-                                actual_penalty_vars_on_max)
-                status_max = "OK" if is_match_max else "MISMATCH"
-                total_expected_penalty_max += expected_excess_max
-                total_actual_penalty_max += actual_penalty_vars_on_max
-
-                if not is_match_max:
-                    total_s6_mismatches_max += 1
-                    print(f"[{status_max}] Nurse={n} (MAX): MaxAssign={max_assign}, ActualAssign={actual_assignments}, "
-                          f"ExpectedExcess={expected_excess_max}, ActualPenaltyVarsON={actual_penalty_vars_on_max}")
-                    print(
-                        f"   Relevant Penalty Max: {relevant_penalty_vars_max}")
-                    print(
-                        f"   Solution Vars Subset (Penalty Max): {[p for p in relevant_penalty_vars_max if p in solution_vars]}")
-
-        # --- Kiểm tra Phần Min Assignments (>= min_assign) ---
-        if min_assign > 0:
-            expected_shortfall_min = 0
-            if actual_assignments < min_assign:
-                expected_shortfall_min = min_assign - actual_assignments
-
-            actual_penalty_vars_on_min = 0
-            num_penalty_possible_min = min_assign  # Thiếu tối đa là min_assign
-            relevant_penalty_vars_min = []
-            if num_penalty_possible_min > 0:
-                for j in range(num_penalty_possible_min):
-                    # Dùng tên biến phạt đã dùng trong hàm constraint_optilog_total_assignments
-                    penalty_var_name = f"penalty_s6_min_pblib_{n}_{j}"
-                    relevant_penalty_vars_min.append(penalty_var_name)
-                    if penalty_var_name in solution_vars:
-                        actual_penalty_vars_on_min += 1
-
-            if expected_shortfall_min > 0 or actual_penalty_vars_on_min > 0:
-                is_match_min = (expected_shortfall_min ==
-                                actual_penalty_vars_on_min)
-                status_min = "OK" if is_match_min else "MISMATCH"
-                total_expected_penalty_min += expected_shortfall_min
-                total_actual_penalty_min += actual_penalty_vars_on_min
-
-                if not is_match_min:
-                    total_s6_mismatches_min += 1
-                    print(f"[{status_min}] Nurse={n} (MIN): MinAssign={min_assign}, ActualAssign={actual_assignments}, "
-                          f"ExpectedShortfall={expected_shortfall_min}, ActualPenaltyVarsON={actual_penalty_vars_on_min}")
-                    print(
-                        f"   Relevant Penalty Min: {relevant_penalty_vars_min}")
-                    print(
-                        f"   Solution Vars Subset (Penalty Min): {[p for p in relevant_penalty_vars_min if p in solution_vars]}")
-
-    print("--- S6 DEBUG SUMMARY ---")
-    print(f"Total Mismatches Found (Max): {total_s6_mismatches_max}")
-    print(
-        f"Total Expected Penalty Vars ON (Max): {total_expected_penalty_max}")
-    print(f"Total Actual Penalty Vars ON (Max): {total_actual_penalty_max}")
-    print(f"Total Mismatches Found (Min): {total_s6_mismatches_min}")
-    print(
-        f"Total Expected Penalty Vars ON (Min): {total_expected_penalty_min}")
-    print(f"Total Actual Penalty Vars ON (Min): {total_actual_penalty_min}")
-    if total_s6_mismatches_max == 0 and total_s6_mismatches_min == 0:
-        print("S6 Min/Max Assignments Penalty mechanism seems to be working correctly.")
-    else:
-        print("Potential issues found in S6 Min/Max Assignments penalty mechanism.")
-    print("------------------------------------")
-
-
 def export_and_solve(args, hard_clauses, soft_clauses, nurse_name_to_index, weekdays, scenario, N, D, S, SK, W, nurse_skills, nurse_contracts, contracts):
     """
     Export the CNF file and solve the problem using the specified solver.
@@ -2409,27 +1868,19 @@ def export_and_solve(args, hard_clauses, soft_clauses, nurse_name_to_index, week
 
     print_variable_counts()
 
-    # Export CNF in custom format
+    # Export CNF in tt-open-wbo-inc format
     export_cnf_custom_format(
         filename=f"{args.sol}/formular.wcnf", hard_clauses=hard_clauses, soft_clauses=soft_clauses)
-
-    # export_cnf(filename=f"{args.sol}/formular.wcnf", hard_clauses=hard_clauses,
-    #            soft_clauses=soft_clauses, weight_hard=200)
-    # Run the solver
+    # Run tt-open-wbo-inc
     solution = run_tt_open_wbo_inc(
         f"{args.sol}/formular.wcnf", args.timeout, f"{args.sol}/log.txt")
-    # solution = run_open_wbo(
-    #     f"{args.sol}/formular.wcnf", args.timeout, f"{args.sol}/log.txt")
+
     if solution:
-        solution_vars_set = set(solution)
+        # solution_vars_set = set(solution)
         # debug_s1_penalty(solution_vars_set, N, D, S,
         #                  SK, weekdays, nurse_skills)
         # debug_s7_penalty(solution_vars_set, N, W, nurse_contracts, contracts)
         # debug_s6_penalty(solution_vars_set, N, D, nurse_contracts, contracts)
-        # debug_s1_pypblib_penalty(solution_vars_set, N, D, S,
-        #                  SK, weekdays, nurse_skills)
-        # debug_s7_pypblib_penalty(solution_vars_set, N, W, nurse_contracts, contracts)
-        # debug_s6_pypblib_penalty(solution_vars_set, N, D, nurse_contracts, contracts)
         save_solutions(args, solution, nurse_name_to_index, weekdays, scenario)
     else:
         print("No solutions.")

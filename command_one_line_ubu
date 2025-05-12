@@ -1,32 +1,32 @@
 n030w4_1_6-2-9-1
-python3 global_nurse_rostering_sat.py --his ./input/n030w4/H0-n030w4-1.json --sce ./input/n030w4/Sc-n030w4.json --weeks ./input/n030w4/WD-n030w4-6.json ./input/n030w4/WD-n030w4-2.json ./input/n030w4/WD-n030w4-1.json ./input/n030w4/WD-n030w4-9.json --sol "solution/n030w4_1_6-2-9-1" --timeout 180
+python3 global_nurse_rostering_sat.py --his ./input/n030w4/H0-n030w4-1.json --sce ./input/n030w4/Sc-n030w4.json --weeks ./input/n030w4/WD-n030w4-6.json ./input/n030w4/WD-n030w4-2.json ./input/n030w4/WD-n030w4-1.json ./input/n030w4/WD-n030w4-9.json --sol "solution/n030w4_1_6-2-9-1" --timeout 137.6
 
 n030w4_1_6-7-5-3
-python3 global_nurse_rostering_sat.py --his ./input/n030w4/H0-n030w4-1.json --sce ./input/n030w4/Sc-n030w4.json --weeks ./input/n030w4/WD-n030w4-6.json ./input/n030w4/WD-n030w4-7.json ./input/n030w4/WD-n030w4-5.json ./input/n030w4/WD-n030w4-3.json --sol "solution/n030w4_1_6-7-5-3" --timeout 180
+python3 global_nurse_rostering_sat.py --his ./input/n030w4/H0-n030w4-1.json --sce ./input/n030w4/Sc-n030w4.json --weeks ./input/n030w4/WD-n030w4-6.json ./input/n030w4/WD-n030w4-7.json ./input/n030w4/WD-n030w4-5.json ./input/n030w4/WD-n030w4-3.json --sol "solution/n030w4_1_6-7-5-3" --timeout 137.6
 
 n030w8_1_2-7-0-9-3-6-0-6
-python3 global_nurse_rostering_sat.py --his ./input/n030w8/H0-n030w8-1.json --sce ./input/n030w8/Sc-n030w8.json --weeks ./input/n030w8/WD-n030w8-2.json ./input/n030w8/WD-n030w8-7.json ./input/n030w8/WD-n030w8-0.json ./input/n030w8/WD-n030w8-9.json ./input/n030w8/WD-n030w8-3.json ./input/n030w8/WD-n030w8-6.json ./input/n030w8/WD-n030w8-0.json ./input/n030w8/WD-n030w8-6.json --sol "solution/n030w8_1_2-7-0-9-3-6-0-6" --timeout 360
+python3 global_nurse_rostering_sat.py --his ./input/n030w8/H0-n030w8-1.json --sce ./input/n030w8/Sc-n030w8.json --weeks ./input/n030w8/WD-n030w8-2.json ./input/n030w8/WD-n030w8-7.json ./input/n030w8/WD-n030w8-0.json ./input/n030w8/WD-n030w8-9.json ./input/n030w8/WD-n030w8-3.json ./input/n030w8/WD-n030w8-6.json ./input/n030w8/WD-n030w8-0.json ./input/n030w8/WD-n030w8-6.json --sol "solution/n030w8_1_2-7-0-9-3-6-0-6" --timeout 275.2
 
 n030w8_1_6-7-5-3-5-6-2-9
-python3 global_nurse_rostering_sat.py --his ./input/n030w8/H0-n030w8-1.json --sce ./input/n030w8/Sc-n030w8.json --weeks ./input/n030w8/WD-n030w8-6.json ./input/n030w8/WD-n030w8-7.json ./input/n030w8/WD-n030w8-5.json ./input/n030w8/WD-n030w8-3.json ./input/n030w8/WD-n030w8-5.json ./input/n030w8/WD-n030w8-6.json ./input/n030w8/WD-n030w8-2.json ./input/n030w8/WD-n030w8-9.json --sol "solution/n030w8_1_6-7-5-3-5-6-2-9" --timeout 360
+python3 global_nurse_rostering_sat.py --his ./input/n030w8/H0-n030w8-1.json --sce ./input/n030w8/Sc-n030w8.json --weeks ./input/n030w8/WD-n030w8-6.json ./input/n030w8/WD-n030w8-7.json ./input/n030w8/WD-n030w8-5.json ./input/n030w8/WD-n030w8-3.json ./input/n030w8/WD-n030w8-5.json ./input/n030w8/WD-n030w8-6.json ./input/n030w8/WD-n030w8-2.json ./input/n030w8/WD-n030w8-9.json --sol "solution/n030w8_1_6-7-5-3-5-6-2-9" --timeout 275.2
 
 n040w4_0_2-0-6-1
-python3 global_nurse_rostering_sat.py --his ./input/n040w4/H0-n040w4-0.json --sce ./input/n040w4/Sc-n040w4.json --weeks ./input/n040w4/WD-n040w4-2.json ./input/n040w4/WD-n040w4-0.json ./input/n040w4/WD-n040w4-6.json ./input/n040w4/WD-n040w4-1.json --sol "solution/n040w4_0_2-0-6-1" --timeout 312
+python3 global_nurse_rostering_sat.py --his ./input/n040w4/H0-n040w4-0.json --sce ./input/n040w4/Sc-n040w4.json --weeks ./input/n040w4/WD-n040w4-2.json ./input/n040w4/WD-n040w4-0.json ./input/n040w4/WD-n040w4-6.json ./input/n040w4/WD-n040w4-1.json --sol "solution/n040w4_0_2-0-6-1" --timeout 240.8
 
 n040w4_2_6-1-0-6
-python3 global_nurse_rostering_sat.py --his ./input/n040w4/H0-n040w4-2.json --sce ./input/n040w4/Sc-n040w4.json --weeks ./input/n040w4/WD-n040w4-6.json ./input/n040w4/WD-n040w4-1.json ./input/n040w4/WD-n040w4-0.json ./input/n040w4/WD-n040w4-6.json --sol "solution/n040w4_2_6-1-0-6" --timeout 312
+python3 global_nurse_rostering_sat.py --his ./input/n040w4/H0-n040w4-2.json --sce ./input/n040w4/Sc-n040w4.json --weeks ./input/n040w4/WD-n040w4-6.json ./input/n040w4/WD-n040w4-1.json ./input/n040w4/WD-n040w4-0.json ./input/n040w4/WD-n040w4-6.json --sol "solution/n040w4_2_6-1-0-6" --timeout 240.8
 
 n040w8_0_0-6-8-9-2-6-6-4
-python3 global_nurse_rostering_sat.py --his ./input/n040w8/H0-n040w8-0.json --sce ./input/n040w8/Sc-n040w8.json --weeks ./input/n040w8/WD-n040w8-0.json ./input/n040w8/WD-n040w8-6.json ./input/n040w8/WD-n040w8-8.json ./input/n040w8/WD-n040w8-9.json ./input/n040w8/WD-n040w8-2.json ./input/n040w8/WD-n040w8-6.json ./input/n040w8/WD-n040w8-6.json ./input/n040w8/WD-n040w8-4.json --sol "solution/n040w8_0_0-6-8-9-2-6-6-4" --timeout 624
+python3 global_nurse_rostering_sat.py --his ./input/n040w8/H0-n040w8-0.json --sce ./input/n040w8/Sc-n040w8.json --weeks ./input/n040w8/WD-n040w8-0.json ./input/n040w8/WD-n040w8-6.json ./input/n040w8/WD-n040w8-8.json ./input/n040w8/WD-n040w8-9.json ./input/n040w8/WD-n040w8-2.json ./input/n040w8/WD-n040w8-6.json ./input/n040w8/WD-n040w8-6.json ./input/n040w8/WD-n040w8-4.json --sol "solution/n040w8_0_0-6-8-9-2-6-6-4" --timeout 481.6
 
 n040w8_2_5-0-4-8-7-1-7-2
-python3 global_nurse_rostering_sat.py --his ./input/n040w8/H0-n040w8-2.json --sce ./input/n040w8/Sc-n040w8.json --weeks ./input/n040w8/WD-n040w8-5.json ./input/n040w8/WD-n040w8-0.json ./input/n040w8/WD-n040w8-4.json ./input/n040w8/WD-n040w8-8.json ./input/n040w8/WD-n040w8-7.json ./input/n040w8/WD-n040w8-1.json ./input/n040w8/WD-n040w8-7.json ./input/n040w8/WD-n040w8-2.json --sol "solution/n040w8_2_5-0-4-8-7-1-7-2" --timeout 624
+python3 global_nurse_rostering_sat.py --his ./input/n040w8/H0-n040w8-2.json --sce ./input/n040w8/Sc-n040w8.json --weeks ./input/n040w8/WD-n040w8-5.json ./input/n040w8/WD-n040w8-0.json ./input/n040w8/WD-n040w8-4.json ./input/n040w8/WD-n040w8-8.json ./input/n040w8/WD-n040w8-7.json ./input/n040w8/WD-n040w8-1.json ./input/n040w8/WD-n040w8-7.json ./input/n040w8/WD-n040w8-2.json --sol "solution/n040w8_2_5-0-4-8-7-1-7-2" --timeout 481.6
 
 n050w4_0_0-4-8-7
-python3 global_nurse_rostering_sat.py --his ./input/n050w4/H0-n050w4-0.json --sce ./input/n050w4/Sc-n050w4.json --weeks ./input/n050w4/WD-n050w4-0.json ./input/n050w4/WD-n050w4-4.json ./input/n050w4/WD-n050w4-8.json ./input/n050w4/WD-n050w4-7.json --sol "solution/n050w4_0_0-4-8-7" --timeout 448
+python3 global_nurse_rostering_sat.py --his ./input/n050w4/H0-n050w4-0.json --sce ./input/n050w4/Sc-n050w4.json --weeks ./input/n050w4/WD-n050w4-0.json ./input/n050w4/WD-n050w4-4.json ./input/n050w4/WD-n050w4-8.json ./input/n050w4/WD-n050w4-7.json --sol "solution/n050w4_0_0-4-8-7" --timeout 344
 
 n050w4_0_7-2-7-2
-python3 global_nurse_rostering_sat.py --his ./input/n050w4/H0-n050w4-0.json --sce ./input/n050w4/Sc-n050w4.json --weeks ./input/n050w4/WD-n050w4-7.json ./input/n050w4/WD-n050w4-2.json ./input/n050w4/WD-n050w4-7.json ./input/n050w4/WD-n050w4-2.json --sol "solution/n050w4_0_7-2-7-2" --timeout 448
+python3 global_nurse_rostering_sat.py --his ./input/n050w4/H0-n050w4-0.json --sce ./input/n050w4/Sc-n050w4.json --weeks ./input/n050w4/WD-n050w4-7.json ./input/n050w4/WD-n050w4-2.json ./input/n050w4/WD-n050w4-7.json ./input/n050w4/WD-n050w4-2.json --sol "solution/n050w4_0_7-2-7-2" --timeout 344
 
 n050w8_1_1-7-8-5-7-4-1-8
 python3 global_nurse_rostering_sat.py --his ./input/n050w8/H0-n050w8-1.json --sce ./input/n050w8/Sc-n050w8.json --weeks ./input/n050w8/WD-n050w8-1.json ./input/n050w8/WD-n050w8-7.json ./input/n050w8/WD-n050w8-8.json ./input/n050w8/WD-n050w8-5.json ./input/n050w8/WD-n050w8-7.json ./input/n050w8/WD-n050w8-4.json ./input/n050w8/WD-n050w8-1.json ./input/n050w8/WD-n050w8-8.json --sol "solution/n050w8_1_1-7-8-5-7-4-1-8" --timeout 896

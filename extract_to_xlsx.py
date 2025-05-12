@@ -65,10 +65,14 @@ def extract_to_xlsx(output_folder, solution_folder):
         solution_status = extract_solution_status(
             os.path.join(solution_folder, instance_name))
 
+        # Calculate total clauses
+        total_clauses = soft_clauses + hard_clauses
+
         results.append({
             'Instance': instance_name,
             'Soft Clauses': soft_clauses,
             'Hard Clauses': hard_clauses,
+            'Total Clauses': total_clauses,
             'Variables': variables,
             'Timeout(s)': timeout,
             'Total Cost': total_cost,
@@ -88,6 +92,11 @@ def extract_to_xlsx(output_folder, solution_folder):
 
 
 if __name__ == "__main__":
-    # extract_to_xlsx('output_for_SC', 'solution')
-    extract_to_xlsx('binomial_bdd_tt_open_wbo', 'solution')
-    # extract_to_xlsx('new_output_for_binomial', 'solution')
+
+    # tt-open-wbo-inc Intel
+    # OptiLog
+    # extract_to_xlsx('output_binomial_new_optilog(best)_tt_open_wbo_intel', 'solution_binomial_new_optilog(best)_tt_open_wbo_intel')
+    # extract_to_xlsx('output_sc_new_optilog(best)_tt_open_wbo_intel', 'solution_sc_new_optilog(best)_tt_open_wbo_intel') 
+
+    extract_to_xlsx('output_binomial_optilog(best)_tt_open_wbo_intel', 'solution_binomial_optilog(best)_tt_open_wbo_intel')
+    # extract_to_xlsx('output_sc_optilog(best)_tt_open_wbo_intel', 'solution_sc_optilog(best)_tt_open_wbo_intel')

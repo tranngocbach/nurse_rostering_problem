@@ -1,18 +1,28 @@
 /.vscode
-/__pycache__
+__pycache__/
 
 #env
 .venv
-#Input, Output
+
+#Input, Output, Debug
+/input
+
+/output_binomial_new_optilog(best)_tt_open_wbo_intel
+/output_sc_new_optilog(best)_tt_open_wbo_intel
+/output_binomial_optilog(best)_tt_open_wbo_intel
+/output_sc_optilog(best)_tt_open_wbo_intel
 
 /solution
-/output_binomial_new_bdd_tt_open_wbo
-/solution_binomial_new_bdd_tt_open_wbo
-/output_for_SC
-/solution_for_SC
+/solution_binomial_new_optilog(best)_tt_open_wbo_intel
+/solution_sc_new_optilog(best)_tt_open_wbo_intel
+/solution_binomial_optilog(best)_tt_open_wbo_intel
+/solution_sc_optilog(best)_tt_open_wbo_intel
+
+/debug_output_binomial_new_optilog(best)_tt_open_wbo_intel
 
 #Tool
 validator.jar
+Benchmark_INRC2-Linux-x86-64
 
 #Debug
 sol.txt
@@ -22,6 +32,7 @@ log.txt
 #Solver
 open-wbo
 tt-open-wbo-inc-Glucose4_1_static
+tt-open-wbo-inc-IntelSATSolver_static
 
 #Statistic
 /statistic
